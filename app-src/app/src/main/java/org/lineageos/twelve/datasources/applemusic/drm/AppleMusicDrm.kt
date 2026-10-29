@@ -61,16 +61,21 @@ object AppleMusicDrm {
             uuid: UUID,
             request: androidx.media3.exoplayer.drm.ExoMediaDrm.ProvisionRequest,
         ): androidx.media3.exoplayer.drm.MediaDrmCallback.Response {
-            // The CDM asks for provisioning when this app has no Widevine device certificate.
-            // Apple provides its own provisioning endpoint (`widevine-cert-url`) in the playback
-            // lease, so Google's certificate service — which may be blocked, as it is on some
-            // networks — is not needed at all.
-            val provisionUrl = license.certUrl.takeIf { it.isNotBlank() }
-                ?: throw IllegalStateException("No provisioning endpoint in the lease")
+            // Use Google's own provisioning service: it replies in exactly the format the CDM
+            // parses. Apple's `widevine-cert-url` remains the fallback, but its protobuf answer has
+            // not matched what the CDM expects (see docs/HANDOVER.md).
+            val provisionUrl = request.defaultUrl.ifBlank { license.certUrl }
+
+            // Google's provisioning endpoint expects the OMA form field `signed_request` holding
+            // the base64 of the provision request. Posting the raw protobuf yields HTTP 400.
+            val formBody = "signed_request=" + java.net.URLEncoder.encode(
+                java.util.Base64.getEncoder().encodeToString(request.data),
+                "UTF-8",
+            )
 
             val httpRequest = Request.Builder()
                 .url(provisionUrl)
-                .post(request.data.toRequestBody("application/octet-stream".toMediaType()))
+                .post(formBody.toRequestBody("application/x-www-form-urlencoded".toMediaType()))
                 .header("Authorization", "Bearer ${license.developerToken}")
                 .header("Media-User-Token", license.musicUserToken)
                 .header("Origin", AppleMusicHttp.ORIGIN)

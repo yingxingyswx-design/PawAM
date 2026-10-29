@@ -592,7 +592,7 @@ class AppleMusicDataSource(
          * that is unresolved makes every track fail with a source error instead of playing the
          * (working) preview.
          */
-        private const val FULL_TRACK_PLAYBACK_ENABLED = false
+        private const val FULL_TRACK_PLAYBACK_ENABLED = true
 
         /**
          * Developer token (JWT). Optional: when empty, the token embedded in Apple's web player is

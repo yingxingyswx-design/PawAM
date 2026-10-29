@@ -451,12 +451,18 @@ class PlaybackService : MediaLibraryService() {
         // keyed off the stream URL: the manifest must be rewritten to CENC before Media3 parses
         // it, and the Widevine licence must be fetched with Apple's own request format.
         // Local and NetEase items are unaffected — the resolver passes them straight through.
-        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        // DefaultDataSource (not DefaultHttpDataSource): the app plays local `content://` files as
+        // well as network streams, and an HTTP-only factory cannot open content URIs at all —
+        // which silently broke every local track.
+        val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(
+            this,
+            androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true),
+        )
 
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
             org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
-                .dataSourceFactory(httpDataSourceFactory)
+                .dataSourceFactory(dataSourceFactory)
         ).setDrmSessionManagerProvider(
             org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
                 .drmSessionManagerProvider()
