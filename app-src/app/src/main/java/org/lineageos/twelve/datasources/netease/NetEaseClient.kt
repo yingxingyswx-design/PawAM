@@ -159,6 +159,55 @@ class NetEaseClient(
         )
     }
 
+    // ---------------------------------------------------------------------
+    // Library
+    // ---------------------------------------------------------------------
+
+    /**
+     * The user's own playlists, including the "liked music" pseudo-playlist (`specialType == 5`).
+     */
+    suspend fun userPlaylists(uid: Long, limit: Int = 100): List<NetEasePlaylist> {
+        val root = eapi(
+            USER_PLAYLIST_PATH,
+            org.json.JSONObject()
+                .put("uid", uid.toString())
+                .put("limit", limit.toString())
+                .put("offset", "0")
+                .put("includeVideo", "false"),
+        ) ?: return emptyList()
+
+        return root.optJSONArray("playlist").objects().mapNotNull { it.playlist() }
+    }
+
+    /**
+     * Albums the user has saved to their library.
+     *
+     * The library page shows these as a grid; an empty list is normal for accounts that only
+     * collect songs.
+     */
+    suspend fun userAlbums(limit: Int = 100): List<NetEaseAlbum> {
+        val root = eapi(
+            ALBUM_SUBLIST_PATH,
+            org.json.JSONObject()
+                .put("limit", limit.toString())
+                .put("offset", "0")
+                .put("total", "true"),
+        ) ?: return emptyList()
+
+        return root.optJSONArray("data").objects().mapNotNull { it.album() }
+    }
+
+    /**
+     * The daily recommendation shelf.
+     */
+    suspend fun dailyRecommendations(): List<NetEaseTrack> {
+        val root = eapi(RECOMMEND_SONGS_PATH, org.json.JSONObject()) ?: return emptyList()
+        return root.optJSONObject("data")
+            ?.optJSONArray("dailySongs")
+            .objects()
+            .mapNotNull { it.track() }
+    }
+
     companion object {
         const val WEB_HOST = "https://music.163.com"
         const val INTERFACE_HOST = "https://interface.music.163.com"
@@ -174,6 +223,10 @@ class NetEaseClient(
 
         /** Account lookup. An expired session answers with `account: null`, not an error. */
         private const val ACCOUNT_PATH = "/api/w/nuser/account/get"
+
+        private const val USER_PLAYLIST_PATH = "/api/user/playlist"
+        private const val ALBUM_SUBLIST_PATH = "/api/album/sublist"
+        private const val RECOMMEND_SONGS_PATH = "/api/v3/discovery/recommend/songs"
 
         /**
          * Stable per-install device identifier.

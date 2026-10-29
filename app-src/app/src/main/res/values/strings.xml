@@ -180,6 +180,7 @@
 
     <string name="netease_signed_in">Signed in</string>
     <string name="netease_nickname">Account</string>
+    <string name="netease_daily_recommendations">Daily recommendations</string>
 
     <!-- PawAM: shared -->
     <string name="sign_in_completed">Signed in</string>

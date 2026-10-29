@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -20,7 +21,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.lineageos.twelve.R
 import org.lineageos.twelve.database.TwelveDatabase
+import org.lineageos.twelve.datasources.netease.NetEaseAlbum
 import org.lineageos.twelve.datasources.netease.NetEaseClient
+import org.lineageos.twelve.datasources.netease.NetEasePlaylist
+import org.lineageos.twelve.datasources.netease.NetEaseTrack
 import org.lineageos.twelve.models.ActivityTab
 import org.lineageos.twelve.models.Album
 import org.lineageos.twelve.models.Artist
@@ -60,43 +64,45 @@ import org.lineageos.twelve.repositories.ProvidersRepository
  */
 class NetEaseDataSource(
     coroutineScope: CoroutineScope,
-    providersRepository: ProvidersRepository,
+    private val providersRepository: ProvidersRepository,
     private val database: TwelveDatabase,
 ) : MediaDataSource {
     private class NetEaseInstance(
         val providerId: Long,
         val cookie: String,
         val nickname: String?,
+        val userId: Long?,
     ) {
         val client = NetEaseClient(cookie)
     }
 
-    private val instances: StateFlow<Map<Long, NetEaseInstance>> =
-        providersRepository.allProvidersToArguments
-            .mapLatest { allProviders ->
-                allProviders
-                    .filter { (provider, _) -> provider.type == ProviderType.NETEASE }
-                    .associate { (provider, _) ->
-                        val row = database.getNetEaseProviderDao()
-                            .get(provider.identifier.typeId)
-                            .firstOrNull()
+    /**
+     * Resolve the instance for [providerId], or the only configured account when unknown.
+     *
+     * Resolved on demand: the account row changes at sign-in, and a cached snapshot can stay
+     * empty depending on subscription timing (that is exactly what made the library appear
+     * unauthorised while the account was in fact signed in).
+     */
+    private suspend fun instanceFor(providerId: Long?): NetEaseInstance? {
+        val allProviders = providersRepository.allProvidersToArguments.first()
+            .filter { (provider, _) -> provider.type == ProviderType.NETEASE }
 
-                        provider.identifier.typeId to NetEaseInstance(
-                            providerId = provider.identifier.typeId,
-                            cookie = row?.cookie.orEmpty(),
-                            nickname = row?.nickname,
-                        )
-                    }
-            }
-            .stateIn(
-                scope = coroutineScope,
-                started = SharingStarted.Eagerly,
-                initialValue = emptyMap(),
-            )
+        val provider = providerId
+            ?.let { id -> allProviders.firstOrNull { it.first.identifier.typeId == id } }
+            ?: allProviders.firstOrNull()
+            ?: return null
 
-    private fun instanceFor(providerId: Long?) = providerId
-        ?.let { instances.value[it] }
-        ?: instances.value.values.firstOrNull()
+        val typeId = provider.first.identifier.typeId
+        val row = database.getNetEaseProviderDao().get(typeId).firstOrNull()
+
+        return NetEaseInstance(
+            providerId = typeId,
+            cookie = row?.cookie.orEmpty(),
+            nickname = row?.nickname,
+            userId = row?.userId,
+        )
+    }
+
 
     private fun <T> request(
         providerId: Long?,
@@ -191,13 +197,32 @@ class NetEaseDataSource(
     override fun activity(
         providerIdentifier: ProviderIdentifier,
     ): Flow<MediaRequestStatus<List<ActivityTab>>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+        request(providerIdentifier.typeId) { instance ->
+            val tracks = instance.client.dailyRecommendations()
+            if (tracks.isEmpty()) {
+                Result.Failure(Error.AUTHENTICATION_REQUIRED)
+            } else {
+                Result.Success(
+                    listOf(
+                        ActivityTab(
+                            id = "netease_daily",
+                            title = localized(R.string.netease_daily_recommendations),
+                            items = tracks.mapNotNull { it.toAudioModel(instance.providerId) }
+                                .map { it as MediaItem<*> },
+                        )
+                    )
+                )
+            }
+        }
 
     override fun albums(
         providerIdentifier: ProviderIdentifier,
         sortingRule: SortingRule,
     ): Flow<MediaRequestStatus<List<Album>>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+        request(providerIdentifier.typeId) { instance ->
+            val albums = instance.client.userAlbums()
+            Result.Success(albums.mapNotNull { it.toAlbumModel(instance.providerId) })
+        }
 
     override fun artists(
         providerIdentifier: ProviderIdentifier,
@@ -221,7 +246,20 @@ class NetEaseDataSource(
         providerIdentifier: ProviderIdentifier,
         sortingRule: SortingRule,
     ): Flow<MediaRequestStatus<List<Playlist>>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+        request(providerIdentifier.typeId) { instance ->
+            val uid = instance.userId
+            if (uid == null) {
+                // The account id is captured at sign-in; without it the playlist endpoint has
+                // nothing to list, so ask the user to sign in again instead of showing an
+                // empty library.
+                Result.Failure(Error.AUTHENTICATION_REQUIRED)
+            } else {
+                Result.Success(
+                    instance.client.userPlaylists(uid)
+                        .map { it.toPlaylistModel(instance.providerId) }
+                )
+            }
+        }
 
     override fun audio(audioUri: Uri): Flow<MediaRequestStatus<Audio>> =
         flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
@@ -303,6 +341,7 @@ object NetEaseUri {
     const val AUTHORITY = "catalog"
 
     const val KIND_AUDIO = "audio"
+    const val KIND_PLAYLIST = "playlist"
     const val KIND_ALBUM = "album"
 
     data class Parsed(
@@ -381,3 +420,60 @@ private fun JSONObject.toAudioModel(providerId: Long): Audio? {
         isFavorite = false,
     )
 }
+
+internal fun NetEaseTrack.toAudioModel(providerId: Long): Audio? {
+    val artwork = artworkUrl
+
+    return Audio(
+        uri = NetEaseUri.of(providerId, NetEaseUri.KIND_AUDIO, id.toString()),
+        thumbnail = artwork?.let {
+            Thumbnail.Builder()
+                .setUri(it.toUri())
+                .setType(Thumbnail.Type.FRONT_COVER)
+                .build()
+        },
+        // Playback is deliberately unset: NetEase URLs are entitlement-gated and a non-VIP
+        // account silently receives a 45 second clip, which must not be presented as a full track.
+        playbackUri = null,
+        mimeType = null,
+        title = name,
+        type = Audio.Type.MUSIC,
+        durationMs = durationMs,
+        artistUri = null,
+        artistName = artistNames.takeIf { it.isNotBlank() },
+        albumUri = albumId?.let { NetEaseUri.of(providerId, NetEaseUri.KIND_ALBUM, it.toString()) },
+        albumTitle = albumName,
+        discNumber = null,
+        trackNumber = null,
+        genreUri = null,
+        genreName = null,
+        year = null,
+        isFavorite = false,
+    )
+}
+
+internal fun NetEaseAlbum.toAlbumModel(providerId: Long): Album? = Album(
+    uri = NetEaseUri.of(providerId, NetEaseUri.KIND_ALBUM, id.toString()),
+    thumbnail = artworkUrl?.let {
+        Thumbnail.Builder()
+            .setUri(it.toUri())
+            .setType(Thumbnail.Type.FRONT_COVER)
+            .build()
+    },
+    title = name,
+    artistUri = null,
+    artistName = artistName.takeIf { it.isNotBlank() },
+    year = year,
+)
+
+internal fun NetEasePlaylist.toPlaylistModel(providerId: Long): Playlist = Playlist(
+    uri = NetEaseUri.of(providerId, NetEaseUri.KIND_PLAYLIST, id.toString()),
+    thumbnail = artworkUrl?.let {
+        Thumbnail.Builder()
+            .setUri(it.toUri())
+            .setType(Thumbnail.Type.FRONT_COVER)
+            .build()
+    },
+    name = name,
+    type = if (isFavorites) Playlist.Type.FAVORITES else Playlist.Type.PLAYLIST,
+)
