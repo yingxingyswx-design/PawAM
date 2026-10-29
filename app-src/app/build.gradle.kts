@@ -95,4 +95,7 @@ dependencies {
         exclude(group = "com.android.support")
     }
     implementation(libs.okhttp)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

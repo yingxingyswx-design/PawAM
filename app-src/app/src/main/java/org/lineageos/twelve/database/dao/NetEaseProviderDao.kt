@@ -45,7 +45,7 @@ interface NetEaseProviderDao {
         cookie: String,
         userId: Long?,
         nickname: String?,
-    )
+    ): Int
 
     @Query("DELETE FROM NetEaseProvider WHERE netease_provider_id = :id")
     suspend fun delete(id: Long)

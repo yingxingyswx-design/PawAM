@@ -479,10 +479,14 @@ class ProvidersRepository(
             throw IllegalArgumentException("Not an Apple Music provider")
         }
 
-        database.getAppleMusicProviderDao().updateMusicUserToken(
+        val updated = database.getAppleMusicProviderDao().updateMusicUserToken(
             providerIdentifier.typeId,
             musicUserToken,
         )
+
+        check(updated > 0) {
+            "Apple Music provider ${providerIdentifier.typeId} does not exist"
+        }
     }
 
     /**
@@ -501,12 +505,18 @@ class ProvidersRepository(
             throw IllegalArgumentException("Not a NetEase provider")
         }
 
-        database.getNetEaseProviderDao().updateSession(
+        val updated = database.getNetEaseProviderDao().updateSession(
             providerIdentifier.typeId,
             cookie,
             userId,
             nickname,
         )
+
+        // A missing row would otherwise be a silent no-op: the user would appear to sign in
+        // successfully while nothing was stored.
+        check(updated > 0) {
+            "NetEase provider ${providerIdentifier.typeId} does not exist"
+        }
     }
 
     /**

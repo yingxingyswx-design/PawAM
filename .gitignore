@@ -29,3 +29,6 @@ t*.xml
 s*.xml
 scripts/dbcheck.sh
 
+
+a*.xml
+

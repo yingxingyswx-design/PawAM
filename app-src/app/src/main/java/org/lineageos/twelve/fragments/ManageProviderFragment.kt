@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-FileCopyrightText: The LineageOS Project
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -73,8 +73,19 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            signInMaterialButton.setText(R.string.sign_in_completed)
+        val created = createdProviderIdentifier
+
+        when {
+            result.resultCode != Activity.RESULT_OK -> Unit
+
+            // The provider was created by this screen purely to hold the session. Re-open the
+            // screen in edit mode so a later save updates it instead of adding a duplicate.
+            created != null -> findNavController().navigate(
+                R.id.manageProviderFragment,
+                createBundle(providerIdentifier = created),
+            )
+
+            else -> signInMaterialButton.setText(R.string.sign_in_completed)
         }
     }
 
@@ -86,6 +97,14 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
 
     // Providers
     private var selectedProviderType: ProviderType? = null
+
+    /**
+     * Set when this screen created a provider purely to hold a sign-in session.
+     *
+     * After a successful sign-in the screen re-opens in edit mode for it, so a later save updates
+     * that provider instead of creating a duplicate.
+     */
+    private var createdProviderIdentifier: ProviderIdentifier? = null
     private val providerArguments = Bundle()
 
     // Recyclerview
@@ -162,32 +181,7 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
         argumentsRecyclerView.adapter = argumentsAdapter
 
         confirmMaterialButton.setOnClickListener {
-            val name = providerNameTextInputLayout.editText?.text?.toString()?.takeIf {
-                it.isNotBlank()
-            }?.also {
-                providerNameTextInputLayout.error = null
-            } ?: run {
-                providerNameTextInputLayout.error = getString(R.string.provider_name_error)
-                return@setOnClickListener
-            }
-
-            val providerType = selectedProviderType?.also {
-                providerTypeTextInputLayout.error = null
-            } ?: run {
-                providerTypeTextInputLayout.error = getString(R.string.provider_type_error)
-                return@setOnClickListener
-            }
-
-            val wrongArguments = providerType.arguments.mapNotNull { argument ->
-                providerArguments.validateArgument(argument)?.let {
-                    argument to it
-                }
-            }
-
-            if (wrongArguments.isNotEmpty()) {
-                showArgumentValidationErrorDialog(wrongArguments)
-                return@setOnClickListener
-            }
+            val (name, providerType) = validatedNameAndType() ?: return@setOnClickListener
 
             viewLifecycleOwner.lifecycleScope.launch {
                 fullscreenLoadingProgressBar.withProgress {
@@ -209,13 +203,21 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
         // PawAM: sign-in entry point. Only providers that authenticate through a web flow expose
         // it, and only after the provider exists (the token is stored on its row).
         signInMaterialButton.setOnClickListener {
-            val identifier = providerIdentifier ?: return@setOnClickListener
-
             if (selectedProviderType !in signInProviderTypes) {
                 return@setOnClickListener
             }
 
-            signInLauncher.launch(WebLoginActivity.createIntent(requireContext(), identifier))
+            viewLifecycleOwner.lifecycleScope.launch {
+                // Signing in stores the session on the provider row, so a provider must exist
+                // first. Instead of forcing the user to save and come back, create it here.
+                val identifier = providerIdentifier ?: run {
+                    val (name, type) = validatedNameAndType() ?: return@launch
+
+                    viewModel.addProvider(type, name, providerArguments) ?: return@launch
+                }
+
+                signInLauncher.launch(WebLoginActivity.createIntent(requireContext(), identifier))
+            }
         }
 
         providerTypeAutoCompleteTextView.setSimpleItems(
@@ -225,7 +227,13 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
         )
 
         providerTypeAutoCompleteTextView.setOnItemClickListener { _, _, position, _ ->
-            viewModel.setProviderType(manageableProviderTypes[position])
+            val providerType = manageableProviderTypes[position]
+
+            viewModel.setProviderType(providerType)
+
+            // Choosing a provider that authenticates through a web flow takes the user straight
+            // to that provider's own login page, instead of making them find and press a button.
+            maybeStartSignIn(providerType)
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -356,13 +364,84 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
     }
 
     /**
-     * Show the sign-in button only for providers that authenticate through a web flow, and only
-     * when editing an existing provider.
+     * Start the built-in browser for [providerType] when it needs a web sign-in.
+     *
+     * A session is stored on the provider row, so when no provider exists yet one is created
+     * first. Its name defaults to the provider type's display name: the user is here to sign in,
+     * and asking them to name it before they can do so only adds friction. The name stays
+     * editable afterwards.
+     */
+    private fun maybeStartSignIn(providerType: ProviderType) {
+        if (providerType !in signInProviderTypes) {
+            return
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            providerIdentifier?.let { existing ->
+                signInLauncher.launch(WebLoginActivity.createIntent(requireContext(), existing))
+                return@launch
+            }
+
+            val nameField = providerNameTextInputLayout.editText
+            val name = nameField?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                ?: getString(providerType.nameStringResId).also { defaultName ->
+                    nameField?.setText(defaultName)
+                }
+
+            val created = viewModel.addProvider(providerType, name, providerArguments)
+                ?: return@launch
+
+            createdProviderIdentifier = created
+            signInLauncher.launch(WebLoginActivity.createIntent(requireContext(), created))
+        }
+    }
+
+    /**
+     * Validate the name, provider type and arguments currently on screen.
+     *
+     * Shared by "save" and "sign in" so both paths enforce exactly the same rules; on failure the
+     * relevant field is flagged and null is returned.
+     *
+     * @return The trimmed name and chosen provider type, or null when the form is invalid.
+     */
+    private fun validatedNameAndType(): Pair<String, ProviderType>? {
+        val name = providerNameTextInputLayout.editText?.text?.toString()?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.also { providerNameTextInputLayout.error = null }
+            ?: run {
+                providerNameTextInputLayout.error = getString(R.string.provider_name_error)
+                return null
+            }
+
+        val providerType = selectedProviderType
+            ?.also { providerTypeTextInputLayout.error = null }
+            ?: run {
+                providerTypeTextInputLayout.error = getString(R.string.provider_type_error)
+                return null
+            }
+
+        val wrongArguments = providerType.arguments.mapNotNull { argument ->
+            providerArguments.validateArgument(argument)?.let { argument to it }
+        }
+
+        if (wrongArguments.isNotEmpty()) {
+            showArgumentValidationErrorDialog(wrongArguments)
+            return null
+        }
+
+        return name to providerType
+    }
+
+    /**
+     * Show the sign-in button only for providers that authenticate through a web flow.
+     *
+     * It is offered **before** the provider is saved as well: signing in creates it, which is the
+     * natural order for a user who has no credentials configured yet.
      */
     private fun updateSignInButtonVisibility() {
         val canSignIn = selectedProviderType in signInProviderTypes
 
-        signInMaterialButton.isVisible = viewModel.inEditMode.value && canSignIn
+        signInMaterialButton.isVisible = canSignIn
     }
 
     private fun showDeleteDialog() {

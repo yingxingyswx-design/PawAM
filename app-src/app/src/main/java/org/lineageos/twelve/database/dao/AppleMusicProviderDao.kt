@@ -53,7 +53,7 @@ interface AppleMusicProviderDao {
         WHERE apple_music_provider_id = :id
         """
     )
-    suspend fun updateMusicUserToken(id: Long, musicUserToken: String)
+    suspend fun updateMusicUserToken(id: Long, musicUserToken: String): Int
 
     @Query(
         """
@@ -62,7 +62,7 @@ interface AppleMusicProviderDao {
         WHERE apple_music_provider_id = :id
         """
     )
-    suspend fun updateStorefront(id: Long, storefront: String)
+    suspend fun updateStorefront(id: Long, storefront: String): Int
 
     @Query("DELETE FROM AppleMusicProvider WHERE apple_music_provider_id = :id")
     suspend fun delete(id: Long)

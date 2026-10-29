@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import org.lineageos.twelve.models.FlowResult.Companion.getOrNull
+import org.lineageos.twelve.models.ProviderIdentifier
 import org.lineageos.twelve.models.ProviderType
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -96,12 +97,17 @@ class ManageProviderViewModel(application: Application) : ProviderViewModel(appl
     /**
      * Add a new provider.
      */
+    /**
+     * Create a provider.
+     *
+     * @return The identifier of the new provider, so the caller can immediately act on it (for
+     *   example launch the sign-in flow, whose result is stored on that provider).
+     */
     suspend fun addProvider(
         providerType: ProviderType, name: String, arguments: Bundle
-    ) {
-        withContext(Dispatchers.IO) {
-            providersRepository.addProvider(providerType, name, arguments)
-        }
+    ): ProviderIdentifier? = withContext(Dispatchers.IO) {
+        val (type, typeId) = providersRepository.addProvider(providerType, name, arguments)
+        ProviderIdentifier(type, typeId)
     }
 
     /**

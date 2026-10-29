@@ -19,10 +19,33 @@ data class Lyrics(
      * @param text The actual lyric text
      * @param durationMs A range that defines the start and end time of the line, in milliseconds.
      *   When only the start time is specified, it is assumed to be the same as the end time
+     * @param words Per-syllable timings, or null when the source only provides line-level timing.
+     *   A non-null list means the line can be rendered karaoke-style; an empty list or null means
+     *   it must fall back to highlighting the whole line at once.
      */
     data class Line(
         val text: String,
         val durationMs: LongRange?,
+        val words: List<Word>? = null,
+    ) {
+        /**
+         * Whether this line carries per-word timing.
+         */
+        val hasWords: Boolean get() = !words.isNullOrEmpty()
+    }
+
+    /**
+     * A single syllable/word inside a line, with its own time range.
+     *
+     * Kept as a separate type rather than reusing [Line] because the two are timed at different
+     * granularities and must not be mixed up when rendering.
+     *
+     * @param text The text of this word, including any leading/trailing space it should own.
+     * @param durationMs The range this word is sung over, in milliseconds.
+     */
+    data class Word(
+        val text: String,
+        val durationMs: LongRange,
     )
 
     class Builder {
