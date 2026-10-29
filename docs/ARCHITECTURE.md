@@ -188,24 +188,28 @@ data class AppleMusicIds(
 |---|---|---|
 | P0 | 仓库/许可证审查、基线可构建验证 | ✅ **完成** |
 | P1 | 工程独立化（去 AOSP 插件、改包名、可装真机） | ✅ **完成** |
-| P2 | 统一数据模型 + Apple Music 数据源骨架 | 🟡 已写，**未编译验证** |
-| P3 | MusicKit 登录（WebView + JS 桥） | 🟡 已写，**未编译验证** |
-| P4 | 搜索 / 专辑详情 / 资料库接入 UI | 🟡 已写，**未编译验证** |
-| P5 | 播放（试听）+ 队列 + 媒体会话 | 🟡 试听已接，未验证 |
+| P2 | 统一数据模型 + Apple Music 数据源骨架 | ✅ 已构建并安装验证 |
+| P3 | MusicKit 登录（WebView + JS 桥） | ✅ 已构建；未做真实账号登录验证 |
+| P4 | 搜索 / 专辑详情 / 资料库接入 UI | 🟡 数据源已接，未配置账号故未端到端验证 |
+| P5 | 播放（试听）+ 队列 + 媒体会话 | ✅ 试听 URI 已接；未实际播放验证 |
 | P6 | TTML 逐字歌词 | ⬜ 未开始 |
 | P7 | 全曲 DRM 播放 | ⬜ 未开始（高风险） |
-| P8 | 网易云数据源 | 🟡 协议层半成品 |
+| P8 | 网易云数据源 | 🟡 仅 eapi 协议层，未接数据源与 UI |
 
 ### 已验证的事实（有构建/设备证据）
 
 1. 上游 Twelve 剔除 `generatebp` 后 `assembleDebug` **成功**（32.5 MB APK）。
-2. PawAM `compileDebugKotlin` **通过**（4m22s）。
-3. PawAM APK 安装到小米 13（`dev.pawam.twelve.dev`），与系统版 Twelve **共存**。
+2. PawAM `compileDebugKotlin` 与 `assembleDebug` **通过**。
+3. PawAM APK（33.2 MB）安装到小米 13（`dev.pawam.twelve.dev`），与系统版 Twelve **共存**。
 4. 冷启动**无崩溃**，M3E 界面、动态配色、底部导航渲染正常。
+5. 导航栏第 4 项为模式切换；实测 `content_mode` 在 `APPLE_MUSIC` / `NETEASE` 间往返，
+   标签同步在「网易云」/「Apple Music」间切换。
 
 ### 未验证的部分
 
-P2–P5 的代码**尚未编译**。这是当前最大的不确定性。
+- **未配置 Apple Music 账号**，故搜索/专辑/资料库的真实请求链路未端到端跑通。
+- 试听播放未实际点播验证。
+- MusicKit 登录页未用真实 Apple 账号验证。
 
 ---
 
