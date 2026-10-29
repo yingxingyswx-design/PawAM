@@ -541,7 +541,9 @@ class AppleMusicDataSource(
             when (val result = instance.client.playlist(parsed.id, parsed.storefront)) {
                 is AppleMusicResult.Success -> {
                     val (playlist, tracks) = result.data
-                    val audios = tracks.mapNotNull { it.toAudioModel(instance.providerId, parsed.storefront) }
+                    val audios = tracks.mapNotNull {
+                        it.toAudioModel(instance.providerId, parsed.storefront)
+                    }
 
                     AppleMusicResult.Success(
                         playlist.toPlaylistModel(instance.providerId, instance.storefront) to audios
@@ -715,13 +717,18 @@ internal fun AppleMusicArtist.toArtistModel(providerId: Long, storefront: String
 internal fun AppleMusicAudio.toAudioModel(providerId: Long, storefront: String): Audio? {
     val id = ids.catalogId ?: ids.libraryId ?: return null
 
+    val audioUri = AppleMusicUri.of(providerId, AppleMusicUri.KIND_AUDIO, storefront, id)
+
     return Audio(
-        uri = AppleMusicUri.of(providerId, AppleMusicUri.KIND_AUDIO, storefront, id),
+        uri = audioUri,
         thumbnail = artworkUrl?.let {
             Thumbnail.Builder().setUri(it.toUri()).setType(Thumbnail.Type.FRONT_COVER).build()
         },
-        // Previews only: see the class documentation.
-        playbackUri = previewUrl?.toUri(),
+        // Library playlist tracks carry no preview URL. `Audio.toMedia3MediaItem` marks an item
+        // with a null playbackUri as unplayable, so such rows could not be started from a playlist
+        // at all. Falling back to the provider URI keeps the item playable: the session resolves
+        // `applemusic://` to a real stream (and licence) when the track is actually started.
+        playbackUri = previewUrl?.toUri() ?: audioUri,
         mimeType = "audio/mp4",
         title = title,
         type = Audio.Type.MUSIC,

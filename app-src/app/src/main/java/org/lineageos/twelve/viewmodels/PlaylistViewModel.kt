@@ -73,11 +73,19 @@ class PlaylistViewModel(application: Application) : TwelveViewModel(application)
     }
 
     fun playPlaylist(position: Int = 0) {
-        playlist.value.getOrNull()?.second?.takeUnless {
-            it.isEmpty()
-        }?.let {
-            playAudio(it, position)
+        val audios = playlist.value.getOrNull()?.second
+        android.util.Log.d(
+            "PawAMPlaylist",
+            "playPlaylist($position): state=${playlist.value}, tracks=${audios?.size}",
+        )
+
+        if (audios.isNullOrEmpty()) {
+            return
         }
+
+        // The adapter position can exceed the list when the playlist was refreshed underneath the
+        // row that was tapped; clamping keeps the tap useful instead of silently doing nothing.
+        playAudio(audios, position.coerceIn(0, audios.lastIndex))
     }
 
     fun shufflePlayPlaylist() {

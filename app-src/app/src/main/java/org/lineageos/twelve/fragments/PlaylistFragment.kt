@@ -96,7 +96,14 @@ class PlaylistFragment : CollapsingToolbarLayoutFragment(R.layout.fragment_playl
 
             override fun ViewHolder.onBindView(item: Audio) {
                 view.setOnClickListener {
-                    viewModel.playPlaylist(bindingAdapterPosition)
+                    // `bindingAdapterPosition` can be NO_POSITION while the list is being updated,
+                    // which silently swallowed the tap and looked like "nothing happens".
+                    val position = bindingAdapterPosition
+                    android.util.Log.d("PawAMPlaylist", "row clicked: position=$position")
+
+                    if (position != androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
+                        viewModel.playPlaylist(position)
+                    }
                 }
                 view.setOnLongClickListener {
                     findNavController().navigateSafe(

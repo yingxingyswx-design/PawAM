@@ -5,6 +5,7 @@
 
 package org.lineageos.twelve.viewmodels
 
+import android.util.Log
 import android.app.Application
 import android.content.ComponentName
 import androidx.lifecycle.AndroidViewModel
@@ -109,15 +110,43 @@ abstract class TwelveViewModel(application: Application) : AndroidViewModel(appl
             }
         }
 
+    private val LOG_TAG = "PawAMViewModel"
+
     fun playAudio(audios: List<Audio>, position: Int) {
+        // An audio without a playback URI cannot be turned into a media item. Before this guard a
+        // single such entry made the whole setMediaItems call fail, which surfaces as "tapping a
+        // row does nothing" rather than as a playback error. Entries are dropped here, and the
+        // requested position is remapped so the tapped track still starts.
+        val playable = audios.withIndex()
+            .filter { it.value.playbackUri != null }
+            .map { it.value }
+
+        if (playable.isEmpty()) {
+            Log.w(LOG_TAG, "playAudio: no playable audio in a list of ${audios.size}")
+            return
+        }
+
+        val startIndex = playable.indexOf(audios.getOrNull(position)).takeIf { it >= 0 } ?: 0
+
+        if (playable.size != audios.size) {
+            Log.w(
+                LOG_TAG,
+                "playAudio: dropped ${audios.size - playable.size} unplayable item(s)",
+            )
+        }
+
+        Log.d(LOG_TAG, "playAudio: start=$startIndex size=${playable.size} controller=${mediaController.value != null}")
+
+        // A null controller means the session is not connected yet; the tap is then a no-op, which
+        // looks exactly like "the row does nothing". Logging makes that case visible.
         mediaController.value?.apply {
             // Initialize shuffle and repeat modes
             shuffleModeEnabled = sharedPreferences.shuffleModeEnabled
             typedRepeatMode = sharedPreferences.typedRepeatMode
 
-            setMediaItems(audios.map { it.toMedia3MediaItem(resources) }, true)
+            setMediaItems(playable.map { it.toMedia3MediaItem(resources) }, true)
             prepare()
-            seekToDefaultPosition(position)
+            seekToDefaultPosition(startIndex)
             play()
         }
     }
