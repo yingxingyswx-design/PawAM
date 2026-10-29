@@ -95,6 +95,35 @@ class AppleMusicPlayback(
             return@withContext null
         }
 
+        // Diagnostic: surface the licence-relevant parts of the lease instead of the whole
+        // document (which is ~80 KB and gets truncated by logcat).
+        runCatching {
+            val song = JSONObject(payload).optJSONArray("songList")?.optJSONObject(0)
+            val keys = song?.keys()?.asSequence()?.toList().orEmpty()
+            Log.d(LOG_TAG, "songList[0] keys: $keys")
+
+            for (key in keys) {
+                val value = song?.opt(key)?.toString().orEmpty()
+                val interesting = key.contains("licen", ignoreCase = true) ||
+                    key.contains("cert", ignoreCase = true) ||
+                    key.contains("drm", ignoreCase = true) ||
+                    key.contains("fairplay", ignoreCase = true) ||
+                    value.contains("licen", ignoreCase = true) ||
+                    value.contains("cert", ignoreCase = true) ||
+                    value.contains("widevine", ignoreCase = true)
+
+                if (interesting) {
+                    Log.d(LOG_TAG, "  $key = ${value.take(300)}")
+                }
+            }
+
+            val assets = song?.optJSONArray("assets")
+            if (assets != null && assets.length() > 0) {
+                val first = assets.optJSONObject(0)
+                Log.d(LOG_TAG, "asset[0]: ${first?.toString()?.take(600)}")
+            }
+        }.onFailure { Log.w(LOG_TAG, "lease introspection failed", it) }
+
         val assets = runCatching {
             JSONObject(payload)
                 .optJSONArray("songList")
@@ -141,6 +170,8 @@ class AppleMusicPlayback(
             "Manifest flavor=$flavor hls=$isHls encrypted=$isEncrypted " +
                 "head=${manifest?.take(220)?.replace('\n', '|')}",
         )
+        // Full manifest: the KEY line and any licence hints live here.
+        Log.d(LOG_TAG, "MANIFEST: ${manifest?.take(3000)?.replace('\n', '|')}")
 
         Lease(url = url, flavor = flavor, isEncrypted = isEncrypted, isHls = isHls)
     }

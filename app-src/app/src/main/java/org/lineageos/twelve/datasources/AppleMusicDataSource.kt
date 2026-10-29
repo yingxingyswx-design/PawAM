@@ -400,6 +400,9 @@ class AppleMusicDataSource(
                     val audio = result.data.toAudioModel(instance.providerId, parsed.storefront)
 
                     if (audio != null) {
+                        // TEMPORARY diagnostics: fetch the playback lease so the full response and
+                        // manifest can be inspected. Does not alter playbackUri.
+                        instance.playback.lease(parsed.id)
                         AppleMusicResult.Success(audio)
                     } else {
                         AppleMusicResult.NotFound

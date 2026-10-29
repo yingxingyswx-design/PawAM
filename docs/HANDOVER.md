@@ -89,7 +89,45 @@
 3. 检查是否存在多个 MediaSession 实例（`dumpsys media_session` 曾显示 3 个 session），确认控制器连的是我们那一个。
 4. 对比本地曲库播放是否同样停在 STOPPED：若本地正常，问题在在线数据源；若本地也异常，问题在播放服务装配。
 
-### 3.2 Apple Music 全曲播放
+### 3.2 Apple Music 全曲播放 —— **许可端点已定位，待实现**
+
+**已查明（真机实测，不再是猜测）**：`webPlayback` 响应里直接带有许可相关字段：
+
+```
+songList[0].hls-key-server-url = https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense
+songList[0].widevine-cert-url  = https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/widevineCert
+songList[0].hls-key-cert-url   = https://s.mzstatic.com/skdtool_2021_certbundle.bin
+```
+
+**请求格式已探明**（`scripts/probe_license.py` 实测）：
+
+```json
+POST acquireWebPlaybackLicense
+Authorization: Bearer <dev token>
+Media-User-Token: <user token>
+Origin: https://music.apple.com
+
+{ "challenge": "<base64 widevine challenge>",
+  "key-system": "com.widevine.alpha",
+  "uri": "<manifest 中 #EXT-X-KEY 的 data: URI 原样回传>",
+  "adamId": "<catalog song id>",
+  "isLibrary": false,
+  "user-initiated": true }
+```
+
+服务器返回 `HTTP 200 {"errorCode":-42585,"status":-1021}` —— 格式被接受，只是 challenge 是伪造的。
+缺少 `key-system` 时返回 500，说明该字段必需。
+
+**剩余实现工作**：
+1. 用 Android `MediaDrm` 生成真实的 Widevine challenge，实现 `MediaDrmCallback`，把上述 JSON
+   发给 `hls-key-server-url`，取回 license。
+2. 重写 HLS 清单：`METHOD=ISO-23001-7` → `SAMPLE-AES-CENC`，
+   KEY 的 data URI 换成 `pssh{ systemId=Widevine, data=WidevineCencHeader{ AESCTR + KID } }`
+   （裸 16 字节会被 -42585 拒绝）。
+3. 通过 `ResolvingDataSource` 在取清单时完成重写，并把原始 KEY URI 传给回调。
+4. 在 `PlaybackService` 装配该 DRM 会话管理器。
+
+### 3.2b 原始记录（保留以便回溯）
 
 **现象**：只能放 30 秒试听。
 
