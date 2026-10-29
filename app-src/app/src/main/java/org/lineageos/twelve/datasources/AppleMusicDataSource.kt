@@ -24,6 +24,7 @@ import org.lineageos.twelve.datasources.applemusic.AppleMusicArtist
 import org.lineageos.twelve.datasources.applemusic.AppleMusicAudio
 import org.lineageos.twelve.datasources.applemusic.AppleMusicClient
 import org.lineageos.twelve.datasources.applemusic.AppleMusicCredentials
+import org.lineageos.twelve.datasources.applemusic.AppleMusicPlayback
 import org.lineageos.twelve.datasources.applemusic.AppleMusicPlaylist
 import org.lineageos.twelve.datasources.applemusic.AppleMusicResult
 import org.lineageos.twelve.datasources.applemusic.AppleMusicTokenProvider
@@ -94,6 +95,8 @@ class AppleMusicDataSource(
             get() = credentials.storefront.ifBlank { AppleMusicClient.DEFAULT_STOREFRONT }
 
         val client = AppleMusicClient(tokenProvider) { credentials }
+
+        val playback = AppleMusicPlayback(tokenProvider) { credentials }
     }
 
 
@@ -394,6 +397,7 @@ class AppleMusicDataSource(
             when (val result = instance.client.song(parsed.id)) {
                 is AppleMusicResult.Success -> {
                     val audio = result.data.toAudioModel(instance.providerId, parsed.storefront)
+
                     if (audio != null) {
                         AppleMusicResult.Success(audio)
                     } else {
