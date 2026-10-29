@@ -286,16 +286,9 @@ class NetEaseDataSource(
                 // explain it instead of playing silence.
                 Result.Success(base)
             } else {
-                Result.Success(
-                    base.copy(
-                        playbackUri = url.toUri(),
-                        mimeType = if (resolved.actualLevel == "standard" || resolved.isTrial) {
-                            "audio/mpeg"
-                        } else {
-                            "audio/flac"
-                        },
-                    )
-                )
+                // mimeType stays null so ExoPlayer sniffs the container: the served format does
+                // not always match the requested level.
+                Result.Success(base.copy(playbackUri = url.toUri()))
             }
         }
     }
@@ -337,23 +330,20 @@ class NetEaseDataSource(
             // to begin — the queue looks like it simply refuses to play.
             val urls = instance.client.songUrls(tracks.map { it.id })
 
-            Result.Success(
-                playlist.toPlaylistModel(instance.providerId) to
-                    tracks.mapNotNull { track ->
-                        track.toAudioModel(instance.providerId)?.let { audio ->
-                            urls[track.id]?.url?.let { url ->
-                                audio.copy(
-                                    playbackUri = url.toUri(),
-                                    mimeType = if (urls[track.id]?.isTrial == true) {
-                                        "audio/mpeg"
-                                    } else {
-                                        "audio/flac"
-                                    },
-                                )
-                            } ?: audio
-                        }
-                    }
+            // Only playable tracks enter the list. ExoPlayer materialises a MediaSource for every
+            // queued item and throws on a null URI, so a single unentitled track would break
+            // playback for the whole playlist — which is what made "play" look dead.
+            val playable = tracks.mapNotNull { track ->
+                val url = urls[track.id]?.url ?: return@mapNotNull null
+                track.toAudioModel(instance.providerId)?.copy(playbackUri = url.toUri())
+            }
+
+            android.util.Log.d(
+                "NetEaseDataSource",
+                "playlist ${parsed.id}: ${tracks.size} tracks, ${playable.size} playable",
             )
+
+            Result.Success(playlist.toPlaylistModel(instance.providerId) to playable)
         }
     }
 
