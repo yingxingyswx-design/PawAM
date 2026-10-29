@@ -29,6 +29,7 @@ import org.lineageos.twelve.datasources.applemusic.AppleMusicPlaylist
 import org.lineageos.twelve.datasources.applemusic.AppleMusicResult
 import org.lineageos.twelve.datasources.applemusic.AppleMusicTokenProvider
 import org.lineageos.twelve.datasources.applemusic.AppleMusicUri
+import org.lineageos.twelve.datasources.applemusic.TtmlParser
 import org.lineageos.twelve.datasources.applemusic.toAlbum
 import org.lineageos.twelve.datasources.applemusic.toArtist
 import org.lineageos.twelve.datasources.applemusic.toAudio
@@ -489,8 +490,28 @@ class AppleMusicDataSource(
     ): Flow<MediaRequestStatus<List<Pair<Playlist, Boolean>>>> =
         flowOf(Result.Success(emptyList()))
 
-    override fun lyrics(audioUri: Uri): Flow<Result<Lyrics, Error>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+    override fun lyrics(audioUri: Uri): Flow<Result<Lyrics, Error>> {
+        val parsed = AppleMusicUri.parse(audioUri)
+            ?: return flowOf(Result.Failure(Error.NOT_FOUND))
+
+        return request(parsed.providerId) { instance ->
+            when (val result = instance.client.lyricsTtml(parsed.id)) {
+                is AppleMusicResult.Success -> {
+                    val lyrics = TtmlParser.parse(result.data)
+                    if (lyrics.lines.isEmpty()) {
+                        // An empty document is indistinguishable from "instrumental" here.
+                        AppleMusicResult.NotFound
+                    } else {
+                        AppleMusicResult.Success(lyrics)
+                    }
+                }
+
+                is AppleMusicResult.Unauthorized -> AppleMusicResult.Unauthorized
+                is AppleMusicResult.NotFound -> AppleMusicResult.NotFound
+                is AppleMusicResult.Failed -> result
+            }
+        }
+    }
 
     // ---------------------------------------------------------------------
     // Mutations

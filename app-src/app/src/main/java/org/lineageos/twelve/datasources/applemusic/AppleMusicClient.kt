@@ -198,6 +198,57 @@ class AppleMusicClient(
     }
 
     // ---------------------------------------------------------------------
+    // Lyrics
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch lyrics as TTML for [songId].
+     *
+     * Apple exposes lyrics only through its private `amp-api` host, not the documented REST
+     * endpoint, so this is best-effort: `syllable-lyrics` carries per-word timing and is preferred,
+     * with the line-level `lyrics` endpoint as a fallback. Both may legitimately return nothing
+     * (instrumentals), which is reported as [AppleMusicResult.NotFound] rather than an error.
+     */
+    suspend fun lyricsTtml(songId: String): AppleMusicResult<String> =
+        userRequest { token, userToken ->
+            val storefront = storefront()
+
+            for (endpoint in LYRIC_ENDPOINTS) {
+                val url = "$LYRICS_HOST/v1/catalog/$storefront/songs/$songId/$endpoint"
+
+                val body = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val request = Request.Builder()
+                            .url(url)
+                            .header("Authorization", "Bearer $token")
+                            .header("Music-User-Token", userToken)
+                            .header("Origin", AppleMusicHttp.ORIGIN)
+                            .header("User-Agent", AppleMusicHttp.USER_AGENT)
+                            .build()
+
+                        AppleMusicHttp.client.newCall(request).execute().use { response ->
+                            if (response.code == 200) response.body?.string() else null
+                        }
+                    }.getOrNull()
+                } ?: continue
+
+                val ttml = runCatching {
+                    JSONObject(body)
+                        .optJSONArray("data")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("attributes")
+                        ?.optString("ttml")
+                }.getOrNull()
+
+                if (!ttml.isNullOrBlank()) {
+                    return@userRequest AppleMusicResult.Success(ttml)
+                }
+            }
+
+            AppleMusicResult.NotFound
+        }
+
+    // ---------------------------------------------------------------------
     // Transport
     // ---------------------------------------------------------------------
 
@@ -281,6 +332,12 @@ class AppleMusicClient(
 
     companion object {
         private const val LOG_TAG = "AppleMusicClient"
+
+        /** Private lyrics host; not part of the documented public API. */
+        private const val LYRICS_HOST = "https://amp-api.music.apple.com"
+
+        /** Preferred first: `syllable-lyrics` carries per-word timing. */
+        private val LYRIC_ENDPOINTS = listOf("syllable-lyrics", "lyrics")
 
         const val DEFAULT_STOREFRONT = "us"
         private const val STATUS_MARKER = "__pawam_status"
