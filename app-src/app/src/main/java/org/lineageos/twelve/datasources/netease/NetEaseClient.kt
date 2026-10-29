@@ -6,6 +6,7 @@
 package org.lineageos.twelve.datasources.netease
 
 import android.content.Context
+import android.util.Log
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -292,7 +293,18 @@ class NetEaseClient(
 
             val item = root.optJSONArray("data")?.optJSONObject(0) ?: continue
             val url = item.optString("url").takeIf { it.isNotBlank() && it != "null" }
-                ?: continue
+
+            Log.d(
+                LOG_TAG,
+                "songUrl id=$songId level=$tryLevel code=${item.optInt("code", -1)} " +
+                    "fee=${item.optInt("fee", -1)} " +
+                    "trial=${item.optJSONObject("freeTrialInfo") != null} " +
+                    "hasUrl=${url != null}",
+            )
+
+            if (url == null) {
+                continue
+            }
 
             val trial = item.optJSONObject("freeTrialInfo")
             return SongUrl(
@@ -305,6 +317,64 @@ class NetEaseClient(
         }
 
         return SongUrl(url = null, actualLevel = null, requestedLevel = level, isTrial = false)
+    }
+
+    /**
+     * Resolve URLs for many songs in a single request.
+     *
+     * The endpoint accepts an id array, so a playlist costs one round trip instead of one per
+     * track. Entitlement is classified per entry exactly as in [songUrl].
+     */
+    suspend fun songUrls(ids: List<Long>, level: String = "exhigh"): Map<Long, SongUrl> {
+        if (ids.isEmpty()) {
+            return emptyMap()
+        }
+
+        val result = mutableMapOf<Long, SongUrl>()
+
+        for (tryLevel in ladderFrom(level)) {
+            val pending = ids.filterNot { result.containsKey(it) }
+            if (pending.isEmpty()) {
+                break
+            }
+
+            val root = eapi(
+                SONG_URL_PATH,
+                org.json.JSONObject().apply {
+                    put(
+                        "ids",
+                        org.json.JSONArray().apply { pending.forEach { put(it) } }.toString(),
+                    )
+                    put("level", tryLevel)
+                    put("encodeType", "flac")
+                    put("header", defaultHeader())
+                },
+                useInterface = true,
+            ) ?: break
+
+            val data = root.optJSONArray("data")?.objects().orEmpty()
+
+            for (item in data) {
+                val id = item.optLong("id", 0L)
+                if (id <= 0L || result.containsKey(id)) {
+                    continue
+                }
+
+                val url = item.optString("url").takeIf { it.isNotBlank() && it != "null" }
+                    ?: continue
+
+                val trial = item.optJSONObject("freeTrialInfo")
+                result[id] = SongUrl(
+                    url = url,
+                    actualLevel = item.optString("level").takeIf { it.isNotBlank() },
+                    requestedLevel = tryLevel,
+                    isTrial = trial != null,
+                    trialEndMs = trial?.optInt("end", 0)?.times(1000L)?.takeIf { it > 0L },
+                )
+            }
+        }
+
+        return result
     }
 
     /** Quality ladder, highest first. */
@@ -338,6 +408,8 @@ class NetEaseClient(
         private const val PLAYLIST_DETAIL_PATH = "/api/v6/playlist/detail"
         private const val SONG_DETAIL_PATH = "/api/v3/song/detail"
         private const val SONG_URL_PATH = "/api/song/enhance/player/url/v1"
+
+        private const val LOG_TAG = "NetEaseClient"
 
         /** The batch song detail endpoint rejects very large batches. */
         private const val SONG_DETAIL_BATCH = 500

@@ -356,7 +356,7 @@ class MediaRepositoryTree(
 
         // Root ID
         /** PawAM: item URIs owned by an online data source whose URLs expire. */
-        private val ONLINE_STREAM_PREFIXES = listOf("applemusic://", "netease://")
+        private val ONLINE_STREAM_PREFIXES = listOf("applemusic://")
 
         private fun String.isOnlineStream() = ONLINE_STREAM_PREFIXES.any { startsWith(it) }
 

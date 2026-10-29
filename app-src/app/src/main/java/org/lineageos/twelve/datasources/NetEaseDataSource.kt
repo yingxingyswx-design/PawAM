@@ -332,9 +332,27 @@ class NetEaseDataSource(
             // detail endpoint. Both are needed for a usable track list.
             val tracks = instance.client.songsDetail(trackIds)
 
+            // Resolve every URL in one batch. Doing it lazily per track would fire one request
+            // per queue entry when playback starts, which makes a long playlist take many seconds
+            // to begin — the queue looks like it simply refuses to play.
+            val urls = instance.client.songUrls(tracks.map { it.id })
+
             Result.Success(
                 playlist.toPlaylistModel(instance.providerId) to
-                    tracks.mapNotNull { it.toAudioModel(instance.providerId) }
+                    tracks.mapNotNull { track ->
+                        track.toAudioModel(instance.providerId)?.let { audio ->
+                            urls[track.id]?.url?.let { url ->
+                                audio.copy(
+                                    playbackUri = url.toUri(),
+                                    mimeType = if (urls[track.id]?.isTrial == true) {
+                                        "audio/mpeg"
+                                    } else {
+                                        "audio/flac"
+                                    },
+                                )
+                            } ?: audio
+                        }
+                    }
             )
         }
     }
