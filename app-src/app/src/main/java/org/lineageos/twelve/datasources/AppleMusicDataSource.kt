@@ -89,7 +89,7 @@ class AppleMusicDataSource(
     private class AppleMusicInstance(
         val providerId: Long,
         val credentials: AppleMusicCredentials,
-        tokenProvider: AppleMusicTokenProvider,
+        private val tokenProvider: AppleMusicTokenProvider,
         context: android.content.Context,
         cache: okhttp3.Cache?,
     ) {
@@ -99,6 +99,12 @@ class AppleMusicDataSource(
         val client = AppleMusicClient(tokenProvider) { credentials }
 
         val playback = AppleMusicPlayback(tokenProvider) { credentials }
+
+        /**
+         * The developer token actually in use: the configured one, or the token scraped from
+         * Apple's web player. The licence exchange needs this, not the raw configuration value.
+         */
+        suspend fun developerToken(): String? = tokenProvider.developerToken()
     }
 
 
@@ -429,7 +435,10 @@ class AppleMusicDataSource(
                                 licenseUrl = lease.licenseUrl.orEmpty(),
                                 keyUri = lease.keyUri.orEmpty(),
                                 adamId = parsed.id,
-                                developerToken = instance.credentials.developerToken,
+                                // The configured token is usually empty: PawAM obtains one by
+                                // scraping Apple's web player, so the resolved value must be used
+                                // or the licence exchange fails with "Missing developer token".
+                                developerToken = instance.developerToken().orEmpty(),
                                 musicUserToken = instance.credentials.musicUserToken,
                                 certUrl = lease.certUrl.orEmpty(),
                             ),
@@ -592,7 +601,7 @@ class AppleMusicDataSource(
          * that is unresolved makes every track fail with a source error instead of playing the
          * (working) preview.
          */
-        private const val FULL_TRACK_PLAYBACK_ENABLED = false
+        private const val FULL_TRACK_PLAYBACK_ENABLED = true
 
         /**
          * Developer token (JWT). Optional: when empty, the token embedded in Apple's web player is

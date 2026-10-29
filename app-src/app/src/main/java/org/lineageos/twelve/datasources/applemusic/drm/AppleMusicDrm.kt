@@ -66,10 +66,7 @@ object AppleMusicDrm {
             // not matched what the CDM expects (see docs/HANDOVER.md).
             val provisionUrl = request.defaultUrl.ifBlank { license.certUrl }
 
-            // Try every plausible encoding in one pass: the service answers 400 both for an
-            // unparseable body and for a rejected one, so guessing one format per build wastes
-            // cycles. All attempts are logged for a single diagnostic run.
-            val (payload, attempts) = ProvisioningFormats.tryAll(
+            val (payload, attempts) = WidevineProvisioning.requestCertificate(
                 client = httpClient,
                 url = provisionUrl,
                 provisionRequest = request.data,
@@ -79,12 +76,12 @@ object AppleMusicDrm {
                 Log.d(
                     LOG_TAG,
                     "Provisioning ${attempt.name}: http=${attempt.code} " +
-                        "size=${attempt.bodySize} preview=${attempt.bodyPreview}",
+                        "size=${attempt.bodySize} preview=${attempt.preview}",
                 )
             }
 
             if (payload == null || payload.isEmpty()) {
-                throw IllegalStateException("Provisioning rejected in every format")
+                throw IllegalStateException("Provisioning rejected in every encoding")
             }
             // The CDM parses the provisioning reply as the legacy OMA envelope
             // `{"signed_response":"<base64>"}`, but Apple answers with a protobuf. Wrapping the
