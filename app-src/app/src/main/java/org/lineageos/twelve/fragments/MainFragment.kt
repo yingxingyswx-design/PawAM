@@ -344,6 +344,13 @@ class MainFragment : Fragment(R.layout.fragment_main) {
                 return@setOnItemSelectedListener false
             }
 
+            // PawAM: this entry is a mode switch, not a page. Returning false keeps it from
+            // becoming the selected tab while still performing the toggle.
+            if (item.itemId == R.id.contentModeFragment) {
+                viewModel.toggleContentMode()
+                return@setOnItemSelectedListener false
+            }
+
             val index = Page.entries.indexOfFirst { it.menuItemId == item.itemId }
 
             if (index >= 0) {
@@ -369,6 +376,16 @@ class MainFragment : Fragment(R.layout.fragment_main) {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.contentMode.collectLatest { contentMode ->
+                        // The label names the mode a tap will switch to, so it always reads as
+                        // the action rather than as the current state.
+                        navigationBarView.menu
+                            .findItem(R.id.contentModeFragment)
+                            ?.setTitle(contentMode.other.nameStringResId)
+                    }
+                }
+
                 launch {
                     viewModel.navigationProvider.collectLatest {
                         it?.let {

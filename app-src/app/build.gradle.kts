@@ -54,14 +54,6 @@ android {
     buildFeatures {
         buildConfig = true
     }
-
-    // PawAM: keep APK output names predictable for `adb install` in build/run scripts.
-    applicationVariants.all {
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "PawAM-${name}-${defaultConfig.versionName}.apk"
-        }
-    }
 }
 
 kapt {

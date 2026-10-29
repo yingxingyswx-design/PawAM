@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     SPDX-FileCopyrightText: Material Design Authors / Google LLC
+     SPDX-License-Identifier: Apache-2.0
+
+     PawAM: generic "album" glyph used to label the Apple Music provider.
+
+     This is deliberately NOT Apple's logo or the Apple Music app icon: those are Apple
+     trademarks, and reproducing them inside a third-party client would imply an affiliation
+     that does not exist.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="#000000"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M480,680q-50,0 -85,-35t-35,-85q0,-50 35,-85t85,-35q23,0 42.5,7.5T560,420v-260h160v80H640v320q0,50 -35,85t-85,35ZM480,120v80H200v520h600v-320h80v320q0,33 -23.5,56.5T800,800H200q-33,0 -56.5,-23.5T120,720V200q0,-33 23.5,-56.5T200,120h280Z" />
+
+</vector>

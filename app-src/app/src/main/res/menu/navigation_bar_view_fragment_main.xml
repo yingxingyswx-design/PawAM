@@ -24,4 +24,15 @@
         android:title="@string/main_fragment_section_library"
         app:tint="?attr/colorOnSurface" />
 
+    <!--
+        PawAM: switches the whole app between content ecosystems.
+        Unlike the items above this is an action, not a destination: selecting it toggles the
+        mode and the label then shows the mode that tapping will switch *to*.
+    -->
+    <item
+        android:id="@+id/contentModeFragment"
+        android:icon="@drawable/ic_sync"
+        android:title="@string/main_fragment_section_netease"
+        app:tint="?attr/colorOnSurface" />
+
 </menu>

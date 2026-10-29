@@ -16,3 +16,9 @@ archive/
 upstream/
 baseline/
 *.log
+
+# adb/uiautomator scratch
+ui*.xml
+badging.txt
+screenshots/
+

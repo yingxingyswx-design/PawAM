@@ -24,7 +24,10 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
 import org.lineageos.twelve.database.TwelveDatabase
+import org.lineageos.twelve.database.entities.AppleMusicProvider
 import org.lineageos.twelve.datasources.AmpacheDataSource
+import org.lineageos.twelve.datasources.AppleMusicDataSource
+import org.lineageos.twelve.datasources.applemusic.AppleMusicClient
 import org.lineageos.twelve.datasources.JellyfinDataSource
 import org.lineageos.twelve.datasources.MediaStoreDataSource
 import org.lineageos.twelve.datasources.SubsonicDataSource
@@ -34,6 +37,7 @@ import org.lineageos.twelve.ext.preferenceFlow
 import org.lineageos.twelve.ext.splitLocalDevices
 import org.lineageos.twelve.ext.storageVolumesFlow
 import org.lineageos.twelve.models.Provider
+import org.lineageos.twelve.models.ProviderArgument.Companion.getArgument
 import org.lineageos.twelve.models.ProviderArgument.Companion.requireArgument
 import org.lineageos.twelve.models.ProviderIdentifier
 import org.lineageos.twelve.models.ProviderType
@@ -159,12 +163,36 @@ class ProvidersRepository(
             }
         }
 
+    // Apple Music
+    private val appleMusicProviders = database.getAppleMusicProviderDao().getAll()
+        .distinctUntilChanged()
+        .mapLatest {
+            it.map { provider ->
+                Provider(
+                    ProviderType.APPLE_MUSIC,
+                    provider.id,
+                    provider.name,
+                ) to Bundle {
+                    putString(
+                        AppleMusicDataSource.ARG_DEVELOPER_TOKEN.key,
+                        provider.developerToken,
+                    )
+                    putString(
+                        AppleMusicDataSource.ARG_MEDIA_USER_TOKEN.key,
+                        provider.musicUserToken,
+                    )
+                    putString(AppleMusicDataSource.ARG_STOREFRONT.key, provider.storefront)
+                }
+            }
+        }
+
     // All providers
     val allProvidersToArguments = combine(
         mediaStoreProviders,
         subsonicProviders,
         jellyfinProviders,
         ampacheProviders,
+        appleMusicProviders,
     ) { it ->
         buildList {
             it.forEach {
@@ -263,6 +291,30 @@ class ProvidersRepository(
 
             providerType to typeId
         }
+
+        ProviderType.APPLE_MUSIC -> {
+            val developerToken = arguments
+                .getArgument(AppleMusicDataSource.ARG_DEVELOPER_TOKEN).orEmpty()
+            val musicUserToken = arguments
+                .getArgument(AppleMusicDataSource.ARG_MEDIA_USER_TOKEN).orEmpty()
+            val storefront = arguments
+                .getArgument(AppleMusicDataSource.ARG_STOREFRONT)
+                ?.lowercase()
+                ?.takeIf { it.isNotBlank() }
+                ?: AppleMusicClient.DEFAULT_STOREFRONT
+
+            val typeId = database.getAppleMusicProviderDao().insert(
+                AppleMusicProvider(
+                    id = 0L,
+                    name = name,
+                    developerToken = developerToken,
+                    musicUserToken = musicUserToken,
+                    storefront = storefront,
+                )
+            )
+
+            providerType to typeId
+        }
     }
 
     /**
@@ -325,6 +377,26 @@ class ProvidersRepository(
                     password
                 )
             }
+
+            ProviderType.APPLE_MUSIC -> {
+                val developerToken = arguments
+                    .getArgument(AppleMusicDataSource.ARG_DEVELOPER_TOKEN).orEmpty()
+                val musicUserToken = arguments
+                    .getArgument(AppleMusicDataSource.ARG_MEDIA_USER_TOKEN).orEmpty()
+                val storefront = arguments
+                    .getArgument(AppleMusicDataSource.ARG_STOREFRONT)
+                    ?.lowercase()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: AppleMusicClient.DEFAULT_STOREFRONT
+
+                database.getAppleMusicProviderDao().update(
+                    providerIdentifier.typeId,
+                    name,
+                    developerToken,
+                    musicUserToken,
+                    storefront,
+                )
+            }
         }
     }
 
@@ -348,7 +420,31 @@ class ProvidersRepository(
             ProviderType.AMPACHE -> database.getAmpacheProviderDao().delete(
                 providerIdentifier.typeId
             )
+
+            ProviderType.APPLE_MUSIC -> database.getAppleMusicProviderDao().delete(
+                providerIdentifier.typeId
+            )
         }
+    }
+
+    /**
+     * Persist the Music User Token obtained through MusicKit for [providerIdentifier].
+     *
+     * Only the token column is written: the developer token, storefront and display name belong to
+     * the provider configuration and must survive a re-sign-in unchanged.
+     */
+    suspend fun updateAppleMusicMusicUserToken(
+        providerIdentifier: ProviderIdentifier,
+        musicUserToken: String,
+    ) {
+        if (providerIdentifier.type != ProviderType.APPLE_MUSIC) {
+            throw IllegalArgumentException("Not an Apple Music provider")
+        }
+
+        database.getAppleMusicProviderDao().updateMusicUserToken(
+            providerIdentifier.typeId,
+            musicUserToken,
+        )
     }
 
     private fun providerToArguments(

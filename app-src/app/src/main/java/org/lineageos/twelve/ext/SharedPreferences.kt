@@ -11,6 +11,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
+import org.lineageos.twelve.models.ContentMode
 import org.lineageos.twelve.models.ProviderIdentifier
 import org.lineageos.twelve.models.RepeatMode
 import org.lineageos.twelve.models.SortingRule
@@ -87,6 +88,17 @@ var SharedPreferences.defaultProvider: ProviderIdentifier?
             DEFAULT_PROVIDER_KEY,
             Json.encodeToString(serializer<ProviderIdentifier?>(), value)
         )
+    }
+
+// PawAM: content mode
+const val CONTENT_MODE_KEY = "content_mode"
+private val CONTENT_MODE_DEFAULT = ContentMode.APPLE_MUSIC.name
+var SharedPreferences.contentMode: ContentMode
+    get() = getString(CONTENT_MODE_KEY, CONTENT_MODE_DEFAULT)
+        ?.let { name -> runCatching { ContentMode.valueOf(name) }.getOrNull() }
+        ?: ContentMode.APPLE_MUSIC
+    set(value) = edit {
+        putString(CONTENT_MODE_KEY, value.name)
     }
 
 // Experimental prefs

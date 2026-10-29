@@ -20,6 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import org.lineageos.twelve.database.converters.InstantConverter
 import org.lineageos.twelve.database.converters.UriConverter
 import org.lineageos.twelve.database.dao.AmpacheProviderDao
+import org.lineageos.twelve.database.dao.AppleMusicProviderDao
 import org.lineageos.twelve.database.dao.FavoriteDao
 import org.lineageos.twelve.database.dao.JellyfinProviderDao
 import org.lineageos.twelve.database.dao.MediaStatsDao
@@ -29,6 +30,7 @@ import org.lineageos.twelve.database.dao.PlaylistWithItemsDao
 import org.lineageos.twelve.database.dao.ResumptionPlaylistDao
 import org.lineageos.twelve.database.dao.SubsonicProviderDao
 import org.lineageos.twelve.database.entities.AmpacheProvider
+import org.lineageos.twelve.database.entities.AppleMusicProvider
 import org.lineageos.twelve.database.entities.Favorite
 import org.lineageos.twelve.database.entities.JellyfinProvider
 import org.lineageos.twelve.database.entities.LocalMediaStats
@@ -53,13 +55,14 @@ import org.lineageos.twelve.database.entities.SubsonicProvider
 
         /* Providers */
         AmpacheProvider::class,
+        AppleMusicProvider::class,
         JellyfinProvider::class,
         SubsonicProvider::class,
 
         /* Local Media Stats */
         LocalMediaStats::class,
     ],
-    version = 10,
+    version = 11,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -70,6 +73,7 @@ import org.lineageos.twelve.database.entities.SubsonicProvider
         // 7 to 8 is done manually
         AutoMigration(from = 8, to = 9),
         AutoMigration(from = 9, to = 10, spec = TwelveDatabase.Companion.MigrationSpec9To10::class),
+        AutoMigration(from = 10, to = 11),
     ],
 )
 @TypeConverters(
@@ -78,6 +82,7 @@ import org.lineageos.twelve.database.entities.SubsonicProvider
 )
 abstract class TwelveDatabase : RoomDatabase() {
     abstract fun getAmpacheProviderDao(): AmpacheProviderDao
+    abstract fun getAppleMusicProviderDao(): AppleMusicProviderDao
     abstract fun getFavoriteDao(): FavoriteDao
     abstract fun getJellyfinProviderDao(): JellyfinProviderDao
     abstract fun getLocalMediaStatsProviderDao(): MediaStatsDao

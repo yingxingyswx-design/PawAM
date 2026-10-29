@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: 2026 The PawAM Project
+  SPDX-License-Identifier: Apache-2.0
+
+  Apple Music sign-in page driven by the official MusicKit JS.
+
+  This is the documented way for a third-party client to obtain a Music User Token:
+  MusicKit is configured with a developer token, and `music.authorize()` runs Apple's own
+  authorization UI and hands back the resulting user token. Nothing here reads cookies or
+  scrapes Apple's web player — that approach is neither supported nor stable.
+
+  `__DEVELOPER_TOKEN__` is substituted by AppleMusicLoginActivity before the page is loaded.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Required for MusicKit authentication to work on a non-Apple origin. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>Sign in to Apple Music</title>
+    <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"
+            data-web-components async></script>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 32px 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            background: #101014;
+            color: #e6e1e5;
+        }
+        h1 { font-size: 1.35rem; font-weight: 500; margin: 0 0 12px; }
+        p { font-size: 0.9rem; line-height: 1.5; color: #cac4d0; max-width: 28em; margin: 0 0 28px; }
+        button {
+            font: inherit;
+            font-size: 0.95rem;
+            padding: 14px 32px;
+            border-radius: 999px;
+            border: none;
+            background: #d0bcff;
+            color: #381e72;
+            cursor: pointer;
+            min-width: 200px;
+        }
+        button:disabled { opacity: 0.5; cursor: default; }
+        .hidden { display: none; }
+        #status { margin-top: 20px; font-size: 0.85rem; color: #cac4d0; min-height: 1.4em; }
+    </style>
+</head>
+<body>
+    <h1>Apple Music</h1>
+    <p id="intro">
+        PawAM uses MusicKit to access your Apple Music account. Signing in lets PawAM read your
+        library and request playback for the subscription you already pay for.
+    </p>
+    <button id="signInButton" disabled>Sign in</button>
+    <button id="signOutButton" class="hidden">Sign out</button>
+    <div id="status">Loading MusicKit…</div>
+
+    <script>
+        (function () {
+            var DEVELOPER_TOKEN = "__DEVELOPER_TOKEN__";
+            var music = null;
+            var statusElement = document.getElementById("status");
+            var signInButton = document.getElementById("signInButton");
+            var signOutButton = document.getElementById("signOutButton");
+
+            function setStatus(text) {
+                statusElement.textContent = text;
+            }
+
+            function reportToken(token) {
+                if (!token) {
+                    setStatus("Apple returned no token.");
+                    return;
+                }
+                if (window.PawAM && window.PawAM.onToken) {
+                    window.PawAM.onToken(token);
+                    setStatus("Signed in. You can close this screen.");
+                } else {
+                    setStatus("Internal error: bridge unavailable.");
+                }
+            }
+
+            function reportError(message) {
+                if (window.PawAM && window.PawAM.onError) {
+                    window.PawAM.onError(String(message));
+                }
+                setStatus("Sign-in failed: " + message);
+            }
+
+            document.addEventListener("musickitloaded", function () {
+                if (!DEVELOPER_TOKEN) {
+                    setStatus("No developer token configured.");
+                    if (window.PawAM && window.PawAM.onMissingDeveloperToken) {
+                        window.PawAM.onMissingDeveloperToken();
+                    }
+                    return;
+                }
+
+                MusicKit.configure({
+                    developerToken: DEVELOPER_TOKEN,
+                    app: { name: "PawAM", build: "1.0" }
+                }).then(function () {
+                    music = MusicKit.getInstance();
+
+                    // A previous session on this device can be reused without another prompt.
+                    if (music.isAuthorized && music.musicUserToken) {
+                        setStatus("Already signed in.");
+                        reportToken(music.musicUserToken);
+                        signOutButton.classList.remove("hidden");
+                        return;
+                    }
+
+                    setStatus("Ready.");
+                    signInButton.disabled = false;
+                }).catch(function (error) {
+                    reportError(error && error.message ? error.message : error);
+                });
+            });
+
+            signInButton.addEventListener("click", function () {
+                if (!music) return;
+                signInButton.disabled = true;
+                setStatus("Waiting for Apple…");
+
+                music.authorize().then(function (token) {
+                    signInButton.disabled = false;
+                    signOutButton.classList.remove("hidden");
+                    reportToken(token);
+                }).catch(function (error) {
+                    signInButton.disabled = false;
+                    reportError(error && error.message ? error.message : error);
+                });
+            });
+
+            signOutButton.addEventListener("click", function () {
+                if (!music) return;
+                music.unauthorize();
+                if (window.PawAM && window.PawAM.onSignedOut) {
+                    window.PawAM.onSignedOut();
+                }
+                setStatus("Signed out.");
+                signOutButton.classList.add("hidden");
+                signInButton.disabled = false;
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import org.lineageos.twelve.R
 import org.lineageos.twelve.datasources.AmpacheDataSource
+import org.lineageos.twelve.datasources.AppleMusicDataSource
 import org.lineageos.twelve.datasources.JellyfinDataSource
 import org.lineageos.twelve.datasources.MediaDataSource
 import org.lineageos.twelve.datasources.SubsonicDataSource
@@ -86,6 +87,29 @@ enum class ProviderType(
             AmpacheDataSource.ARG_SERVER,
             AmpacheDataSource.ARG_USERNAME,
             AmpacheDataSource.ARG_PASSWORD,
+        ),
+        true,
+    ),
+
+    /**
+     * Apple Music provider.
+     *
+     * Apple publishes no public consumer API, and access is split across two independent
+     * credentials that must not be conflated:
+     *
+     * - a **developer token** (JWT) authorising the *application* to call the API;
+     * - a **`media-user-token`** captured from a signed-in `music.apple.com` session, which
+     *   identifies the *user* and is required for library access and playback.
+     *
+     * Neither implies the other, and the storefront selects the catalog region via the URL path.
+     */
+    APPLE_MUSIC(
+        R.string.provider_type_apple_music,
+        R.drawable.ic_apple_music,
+        listOf(
+            AppleMusicDataSource.ARG_DEVELOPER_TOKEN,
+            AppleMusicDataSource.ARG_MEDIA_USER_TOKEN,
+            AppleMusicDataSource.ARG_STOREFRONT,
         ),
         true,
     ),

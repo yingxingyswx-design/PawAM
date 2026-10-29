@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import okhttp3.Cache
 import org.lineageos.twelve.database.TwelveDatabase
 import org.lineageos.twelve.datasources.AmpacheDataSource
+import org.lineageos.twelve.datasources.AppleMusicDataSource
 import org.lineageos.twelve.datasources.FileDataSource
 import org.lineageos.twelve.datasources.JellyfinDataSource
 import org.lineageos.twelve.datasources.MediaDataSource
@@ -109,6 +110,16 @@ class MediaRepository(
     )
 
     /**
+     * Apple Music data source.
+     */
+    private val appleMusicDataSource = AppleMusicDataSource(
+        scope,
+        providersRepository,
+        database,
+        cache,
+    )
+
+    /**
      * File data source.
      */
     private val fileDataSource = FileDataSource(
@@ -122,6 +133,7 @@ class MediaRepository(
             subsonicDataSource,
             jellyfinDataSource,
             ampacheDataSource,
+            appleMusicDataSource,
             fileDataSource,
         )
     ).asStateFlow()
@@ -372,6 +384,7 @@ class MediaRepository(
         ProviderType.SUBSONIC -> subsonicDataSource
         ProviderType.JELLYFIN -> jellyfinDataSource
         ProviderType.AMPACHE -> ampacheDataSource
+        ProviderType.APPLE_MUSIC -> appleMusicDataSource
     }
 
     /**

@@ -71,6 +71,13 @@
             android:theme="@style/Theme.SettingsLib" />
 
         <activity
+            android:name=".AppleMusicLoginActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/apple_music_sign_in"
+            android:theme="@style/Theme.Twelve" />
+
+        <activity
             android:name=".ViewActivity"
             android:excludeFromRecents="true"
             android:exported="true"
