@@ -35,13 +35,14 @@ object ProvisioningResponse {
         }
 
         val field = firstLengthDelimitedField(raw) ?: raw
-        val encoded = java.util.Base64.getEncoder().encodeToString(field)
 
-        // The CDM parses provisioning replies as OMA DRM XML, not JSON. Wrapping in JSON yields
-        // `ExtractAndDecodeSignedMessage: Cannot locate start substring`, which is the CDM failing
-        // to find the expected `<SignedResponse>` element.
-        return "<ProvisioningResponse xmlns=\"http://www.w3.org/2001/04/xmlenc#\">" +
-            "<SignedResponse>$encoded</SignedResponse></ProvisioningResponse>"
+        // URL-safe base64, unpadded: the CDM locates the payload with a character-class match, and
+        // standard base64's `+` / `/` break that match — which is exactly the
+        // `Cannot locate start substring` failure.
+        val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(field)
+
+        return "{\"signed_response\":\"$encoded\"}"
     }
 
     /**

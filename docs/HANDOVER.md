@@ -268,3 +268,19 @@ CDM 对响应格式的要求（按尝试顺序记录）：
 结论：CDM 在响应里寻找某个特定起始标记，尚未命中。下一步应打印 CDM 期望的格式
 （Widevine `certificate_provisioning.cpp` 的 `ExtractAndDecodeSignedMessage`），
 或对比 Google 官方 provisioning 服务返回的响应结构（VPN 下可抓到）。
+
+#### 当前产品行为（第 23 轮）
+
+`AppleMusicDataSource.FULL_TRACK_PLAYBACK_ENABLED` 默认 **false**。
+
+原因：provisioning 未解决时，把加密流交给播放器会让每一首歌以 `Source error` 失败；
+关闭后回退到 30 秒试听，用户至少能听到声音。等 provisioning 解决后再打开该开关。
+
+已尝试仍失败的响应格式（供后续排查，勿重复）：
+裸 protobuf、整体 protobuf 的 JSON 信封、内层 field1 + JSON、
+内层 field1 + OMA XML、内层 field1 + URL-safe base64 JSON。
+CDM 始终报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`。
+
+**下一步最有效的一步**：在已翻墙的设备上抓一次 Google 官方 provisioning 服务的
+真实响应体（`POST www.googleapis.com/certificateprovisioning/v1/devicecertificates/create`
+配合 MediaDrm 的 provision request），照它的结构构造 Apple 端点的响应。

@@ -411,13 +411,17 @@ class AppleMusicDataSource(
 
                     if (lease == null || !lease.isHls) {
                         AppleMusicResult.Success(audio)
-                    } else if (!lease.isEncrypted) {
+                    } else if (!lease.isEncrypted || !FULL_TRACK_PLAYBACK_ENABLED) {
+                        // Full-length playback needs a Widevine provisioning round trip that is
+                        // not solved yet (see docs/HANDOVER.md). Until it is, previews are used so
+                        // a track plays instead of failing with "Source error".
                         AppleMusicResult.Success(
                             audio.copy(
                                 playbackUri = lease.url.toUri(),
                                 mimeType = "application/x-mpegURL",
                             )
                         )
+                        AppleMusicResult.Success(audio)
                     } else {
                         AppleMusicStreamRegistry.register(
                             lease.url,
@@ -581,6 +585,15 @@ class AppleMusicDataSource(
     ): MediaRequestStatus<Unit> = Result.Failure(Error.NOT_IMPLEMENTED)
 
     companion object {
+        /**
+         * Whether encrypted full-length streams are handed to the player.
+         *
+         * Disabled because Widevine provisioning with Apple has not been solved; enabling it while
+         * that is unresolved makes every track fail with a source error instead of playing the
+         * (working) preview.
+         */
+        private const val FULL_TRACK_PLAYBACK_ENABLED = false
+
         /**
          * Developer token (JWT). Optional: when empty, the token embedded in Apple's web player is
          * scraped as a fallback. Supplying one is strongly preferred — see
