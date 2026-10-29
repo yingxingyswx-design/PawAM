@@ -208,6 +208,114 @@ class NetEaseClient(
             .mapNotNull { it.track() }
     }
 
+    /**
+     * Playlist header (name, cover, track count).
+     */
+    suspend fun playlistHeader(playlistId: String): NetEasePlaylist? {
+        val root = eapi(
+            PLAYLIST_DETAIL_PATH,
+            org.json.JSONObject()
+                .put("id", playlistId)
+                .put("n", "1")
+                .put("s", "0"),
+        ) ?: return null
+
+        return root.optJSONObject("playlist")?.playlist()
+    }
+
+    /**
+     * Track ids of a playlist.
+     *
+     * `/v6/playlist/detail` frequently returns only `trackIds`; the per-track metadata has to be
+     * fetched separately.
+     */
+    suspend fun playlistTrackIds(playlistId: String): List<Long>? {
+        val root = eapi(
+            PLAYLIST_DETAIL_PATH,
+            org.json.JSONObject()
+                .put("id", playlistId)
+                .put("n", "1000")
+                .put("s", "0"),
+        ) ?: return null
+
+        return root.optJSONObject("playlist")
+            ?.optJSONArray("trackIds")
+            .objects()
+            .mapNotNull { it.optLong("id", 0L).takeIf { id -> id > 0L } }
+    }
+
+    /**
+     * Fetch metadata for [ids] through the batch song detail endpoint.
+     */
+    suspend fun songsDetail(ids: List<Long>): List<NetEaseTrack> {
+        if (ids.isEmpty()) {
+            return emptyList()
+        }
+
+        // The endpoint caps the batch size; chunking keeps large playlists from being rejected.
+        return ids.chunked(SONG_DETAIL_BATCH).flatMap { chunk ->
+            val payload = org.json.JSONObject().put(
+                "c",
+                org.json.JSONArray().apply {
+                    chunk.forEach { id -> put(org.json.JSONObject().put("id", id.toString())) }
+                }.toString(),
+            )
+
+            val root = eapi(SONG_DETAIL_PATH, payload) ?: return@flatMap emptyList()
+            root.optJSONArray("songs").objects().mapNotNull { it.track() }
+        }
+    }
+
+    /**
+     * Resolve a playable URL for [songId].
+     *
+     * NetEase does **not** report entitlement problems as errors: a non-VIP account silently
+     * receives a ~45 second clip (`freeTrialInfo` present), and unavailable tracks return no URL
+     * at all. Both are classified here so the caller can tell "full track" from "trial" from
+     * "cannot play", instead of discovering it when the audio stops halfway.
+     *
+     * @return [SongUrl] with a null [SongUrl.url] when nothing is playable.
+     */
+    suspend fun songUrl(songId: Long, level: String = "exhigh"): SongUrl {
+        // Walk down the quality ladder: the requested level may be unavailable for this account.
+        for (tryLevel in ladderFrom(level)) {
+            val root = eapi(
+                SONG_URL_PATH,
+                org.json.JSONObject().apply {
+                    put("ids", org.json.JSONArray().put(songId).toString())
+                    put("level", tryLevel)
+                    put("encodeType", "flac")
+                    put("header", defaultHeader())
+                },
+                useInterface = true,
+            ) ?: continue
+
+            val item = root.optJSONArray("data")?.optJSONObject(0) ?: continue
+            val url = item.optString("url").takeIf { it.isNotBlank() && it != "null" }
+                ?: continue
+
+            val trial = item.optJSONObject("freeTrialInfo")
+            return SongUrl(
+                url = url,
+                actualLevel = item.optString("level").takeIf { it.isNotBlank() },
+                requestedLevel = tryLevel,
+                isTrial = trial != null,
+                trialEndMs = trial?.optInt("end", 0)?.times(1000L)?.takeIf { it > 0L },
+            )
+        }
+
+        return SongUrl(url = null, actualLevel = null, requestedLevel = level, isTrial = false)
+    }
+
+    /** Quality ladder, highest first. */
+    private fun ladderFrom(level: String): List<String> = when (level) {
+        "lossless" -> listOf("lossless", "exhigh", "higher", "standard")
+        "hires" -> listOf("hires", "lossless", "exhigh", "higher", "standard")
+        "exhigh" -> listOf("exhigh", "higher", "standard")
+        "higher" -> listOf("higher", "standard")
+        else -> listOf("standard")
+    }
+
     companion object {
         const val WEB_HOST = "https://music.163.com"
         const val INTERFACE_HOST = "https://interface.music.163.com"
@@ -227,6 +335,12 @@ class NetEaseClient(
         private const val USER_PLAYLIST_PATH = "/api/user/playlist"
         private const val ALBUM_SUBLIST_PATH = "/api/album/sublist"
         private const val RECOMMEND_SONGS_PATH = "/api/v3/discovery/recommend/songs"
+        private const val PLAYLIST_DETAIL_PATH = "/api/v6/playlist/detail"
+        private const val SONG_DETAIL_PATH = "/api/v3/song/detail"
+        private const val SONG_URL_PATH = "/api/song/enhance/player/url/v1"
+
+        /** The batch song detail endpoint rejects very large batches. */
+        private const val SONG_DETAIL_BATCH = 500
 
         /**
          * Stable per-install device identifier.
@@ -248,3 +362,19 @@ class NetEaseClient(
         fun defaultCache(context: Context) = Cache(context.cacheDir, 20L * 1024 * 1024)
     }
 }
+
+/**
+ * Outcome of a NetEase URL resolution.
+ *
+ * @param url Null when nothing was playable (no copyright, VIP-only, or the account lost access).
+ * @param actualLevel The level the server actually served, which may be lower than requested.
+ * @param isTrial True when only a preview clip was returned.
+ * @param trialEndMs End of the preview clip, when it is a trial.
+ */
+data class SongUrl(
+    val url: String?,
+    val actualLevel: String?,
+    val requestedLevel: String,
+    val isTrial: Boolean,
+    val trialEndMs: Long? = null,
+)

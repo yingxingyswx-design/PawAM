@@ -268,7 +268,7 @@ class MediaRepositoryTree(
                 // which surfaces as "the song played once, then plays silently". Re-resolving the
                 // item asks the data source for a fresh URL instead of reusing the stale one.
                 item.localConfiguration?.uri != null &&
-                    !item.mediaId.startsWith(APPLE_MUSIC_URI_PREFIX) -> add(item)
+                    !item.mediaId.isOnlineStream() -> add(item)
 
                 else -> getItem(item.mediaId)?.let { mediaItem ->
                     add(mediaItem)
@@ -355,8 +355,10 @@ class MediaRepositoryTree(
         private val LOG_TAG = MediaRepositoryTree::class.simpleName!!
 
         // Root ID
-        /** PawAM: item URIs owned by the Apple Music data source. */
-        private const val APPLE_MUSIC_URI_PREFIX = "applemusic://"
+        /** PawAM: item URIs owned by an online data source whose URLs expire. */
+        private val ONLINE_STREAM_PREFIXES = listOf("applemusic://", "netease://")
+
+        private fun String.isOnlineStream() = ONLINE_STREAM_PREFIXES.any { startsWith(it) }
 
         private const val ROOT_MEDIA_ITEM_ID = "[root]"
 

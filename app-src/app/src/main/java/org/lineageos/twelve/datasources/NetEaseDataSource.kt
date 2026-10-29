@@ -153,6 +153,7 @@ class NetEaseDataSource(
         return when (parsed.kind) {
             NetEaseUri.KIND_AUDIO -> MediaType.AUDIO
             NetEaseUri.KIND_ALBUM -> MediaType.ALBUM
+            NetEaseUri.KIND_PLAYLIST -> MediaType.PLAYLIST
             else -> null
         }
     }
@@ -261,8 +262,43 @@ class NetEaseDataSource(
             }
         }
 
-    override fun audio(audioUri: Uri): Flow<MediaRequestStatus<Audio>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+    override fun audio(audioUri: Uri): Flow<MediaRequestStatus<Audio>> {
+        val parsed = NetEaseUri.parse(audioUri)
+            ?: return flowOf(Result.Failure(Error.NOT_FOUND))
+
+        val songId = parsed.id.toLongOrNull()
+            ?: return flowOf(Result.Failure(Error.NOT_FOUND))
+
+        return request(parsed.providerId) { instance ->
+            val track = instance.client.songsDetail(listOf(songId)).firstOrNull()
+                ?: return@request Result.Failure(Error.NOT_FOUND)
+
+            val base = track.toAudioModel(instance.providerId)
+                ?: return@request Result.Failure(Error.NOT_FOUND)
+
+            // Resolve at play time: NetEase URLs are signed and short-lived, and the account's
+            // entitlement can change between listing and playback.
+            val resolved = instance.client.songUrl(songId)
+            val url = resolved.url
+
+            if (url == null) {
+                // Nothing playable for this account. Keep the item non-playable so the UI can
+                // explain it instead of playing silence.
+                Result.Success(base)
+            } else {
+                Result.Success(
+                    base.copy(
+                        playbackUri = url.toUri(),
+                        mimeType = if (resolved.actualLevel == "standard" || resolved.isTrial) {
+                            "audio/mpeg"
+                        } else {
+                            "audio/flac"
+                        },
+                    )
+                )
+            }
+        }
+    }
 
     override fun album(
         albumUri: Uri,
@@ -281,8 +317,27 @@ class NetEaseDataSource(
 
     override fun playlist(
         playlistUri: Uri,
-    ): Flow<MediaRequestStatus<Pair<Playlist, List<Audio>>>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+    ): Flow<MediaRequestStatus<Pair<Playlist, List<Audio>>>> {
+        val parsed = NetEaseUri.parse(playlistUri)
+            ?: return flowOf(Result.Failure(Error.NOT_FOUND))
+
+        return request(parsed.providerId) { instance ->
+            val trackIds = instance.client.playlistTrackIds(parsed.id)
+                ?: return@request Result.Failure(Error.NOT_FOUND)
+
+            val playlist = instance.client.playlistHeader(parsed.id)
+                ?: return@request Result.Failure(Error.NOT_FOUND)
+
+            // `/v6/playlist/detail` often returns only ids; the metadata comes from the song
+            // detail endpoint. Both are needed for a usable track list.
+            val tracks = instance.client.songsDetail(trackIds)
+
+            Result.Success(
+                playlist.toPlaylistModel(instance.providerId) to
+                    tracks.mapNotNull { it.toAudioModel(instance.providerId) }
+            )
+        }
+    }
 
     override fun audioPlaylistsStatus(
         audioUri: Uri,
