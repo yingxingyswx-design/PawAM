@@ -529,8 +529,31 @@ class AppleMusicDataSource(
 
     override fun playlist(
         playlistUri: Uri,
-    ): Flow<MediaRequestStatus<Pair<Playlist, List<Audio>>>> =
-        flowOf(Result.Failure(Error.NOT_IMPLEMENTED))
+    ): Flow<MediaRequestStatus<Pair<Playlist, List<Audio>>>> {
+        val parsed = AppleMusicUri.parse(playlistUri)
+            ?: return flowOf(Result.Failure(Error.NOT_FOUND))
+
+        if (parsed.kind != AppleMusicUri.KIND_PLAYLIST) {
+            return flowOf(Result.Failure(Error.NOT_FOUND))
+        }
+
+        return request(parsed.providerId) { instance ->
+            when (val result = instance.client.playlist(parsed.id, parsed.storefront)) {
+                is AppleMusicResult.Success -> {
+                    val (playlist, tracks) = result.data
+                    val audios = tracks.mapNotNull { it.toAudioModel(instance.providerId, parsed.storefront) }
+
+                    AppleMusicResult.Success(
+                        playlist.toPlaylistModel(instance.providerId, instance.storefront) to audios
+                    )
+                }
+
+                is AppleMusicResult.Unauthorized -> AppleMusicResult.Unauthorized
+                is AppleMusicResult.NotFound -> AppleMusicResult.NotFound
+                is AppleMusicResult.Failed -> result
+            }
+        }
+    }
 
     override fun audioPlaylistsStatus(
         audioUri: Uri,

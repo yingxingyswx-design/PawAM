@@ -16,6 +16,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.HeartRating
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -500,6 +501,21 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .experimentalSetDynamicSchedulingEnabled(true)
             .build()
+
+        // A provider track can be unavailable (region-locked catalog item, removed release). One
+        // such item must not kill the whole queue, so a playback error skips to the next entry
+        // instead of surfacing as a stopped session. The last item still reports its error.
+        player?.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                val current = player ?: return
+                if (current.hasNextMediaItem()) {
+                    Log.w("PawAMPlayback", "Skipping unplayable item: ${error.errorCodeName}", error)
+                    current.seekToNextMediaItem()
+                    current.prepare()
+                    current.play()
+                }
+            }
+        })
 
         mediaLibrarySession = MediaLibrarySession.Builder(
             this, player, mediaLibrarySessionCallback

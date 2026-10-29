@@ -153,6 +153,60 @@ class AppleMusicClient(
             AppleMusicResult.Success(root.dataArray().mapNotNull { it.toPlaylist(storefront()) })
         }
 
+    /**
+     * Fetch one playlist together with its tracks.
+     *
+     * Library playlists (`p.*` ids) are read through `/me/library/playlists`, catalog playlists
+     * through `/catalog/{storefront}/playlists`; both expose their tracks under the `tracks`
+     * relationship, so the parsing is shared.
+     */
+    suspend fun playlist(
+        playlistId: String,
+        storefront: String,
+    ): AppleMusicResult<Pair<AppleMusicPlaylist, List<AppleMusicAudio>>> {
+        val isLibrary = playlistId.startsWith("p.")
+
+        return if (isLibrary) {
+            userRequest { token, userToken ->
+                val url = url("me", "library", "playlists", playlistId) {
+                    addQueryParameter("include", "tracks")
+                } ?: return@userRequest AppleMusicResult.Failed()
+
+                readPlaylistWithTracks(url, token, userToken, storefront)
+            }
+        } else {
+            authenticatedRequest { token ->
+                val url = url("catalog", storefront, "playlists", playlistId) {
+                    addQueryParameter("include", "tracks")
+                } ?: return@authenticatedRequest AppleMusicResult.Failed()
+
+                readPlaylistWithTracks(url, token, userToken = null, storefront)
+            }
+        }
+    }
+
+    private suspend fun readPlaylistWithTracks(
+        url: String,
+        token: String,
+        userToken: String?,
+        storefront: String,
+    ): AppleMusicResult<Pair<AppleMusicPlaylist, List<AppleMusicAudio>>> {
+        val root = getJson(url, token, userToken)
+            ?: return AppleMusicResult.Failed()
+        val resource = root.dataArray().firstOrNull()
+            ?: return AppleMusicResult.NotFound
+
+        val playlist = resource.toPlaylist(storefront)
+            ?: return AppleMusicResult.NotFound
+        val tracks = resource.optJSONObject("relationships")
+            ?.optJSONObject("tracks")
+            ?.optJSONArray("data")
+            .toObjectList()
+            .mapNotNull { it.toAudio(storefront) }
+
+        return AppleMusicResult.Success(playlist to tracks)
+    }
+
     suspend fun libraryAlbums(limit: Int = 100): AppleMusicResult<List<AppleMusicAlbum>> =
         userRequest { token, userToken ->
             val url = url("me", "library", "albums") {
