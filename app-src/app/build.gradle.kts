@@ -97,5 +97,7 @@ dependencies {
     implementation(libs.okhttp)
 
     testImplementation(libs.junit)
+    // Real org.json on the unit-test classpath: android.jar only ships stubs.
+    testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)
 }

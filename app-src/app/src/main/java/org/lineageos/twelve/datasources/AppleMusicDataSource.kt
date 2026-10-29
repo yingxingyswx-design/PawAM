@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -70,7 +71,8 @@ import org.lineageos.twelve.repositories.ProvidersRepository
  */
 class AppleMusicDataSource(
     coroutineScope: CoroutineScope,
-    providersRepository: ProvidersRepository,
+    private val context: android.content.Context,
+    private val providersRepository: ProvidersRepository,
     private val database: TwelveDatabase,
     private val cache: okhttp3.Cache? = null,
 ) : MediaDataSource {
@@ -84,54 +86,67 @@ class AppleMusicDataSource(
     private class AppleMusicInstance(
         val providerId: Long,
         val credentials: AppleMusicCredentials,
+        tokenProvider: AppleMusicTokenProvider,
+        context: android.content.Context,
         cache: okhttp3.Cache?,
     ) {
         val storefront: String
             get() = credentials.storefront.ifBlank { AppleMusicClient.DEFAULT_STOREFRONT }
 
-        private val tokenProvider = AppleMusicTokenProvider {
-            credentials.developerToken.takeIf { it.isNotBlank() }
-        }
-
         val client = AppleMusicClient(tokenProvider) { credentials }
     }
 
 
-    private val instances: StateFlow<Map<Long, AppleMusicInstance>> =
-        providersRepository.allProvidersToArguments
-            .mapLatest { allProviders ->
-                allProviders
-                    .filter { (provider, _) -> provider.type == ProviderType.APPLE_MUSIC }
-                    .associate { (provider, _) ->
-                        val row = database.getAppleMusicProviderDao()
-                            .get(provider.identifier.typeId)
-                            .firstOrNull()
-
-                        provider.identifier.typeId to AppleMusicInstance(
-                            providerId = provider.identifier.typeId,
-                            credentials = AppleMusicCredentials(
-                                developerToken = row?.developerToken.orEmpty(),
-                                musicUserToken = row?.musicUserToken.orEmpty(),
-                                storefront = row?.storefront
-                                    ?: AppleMusicClient.DEFAULT_STOREFRONT,
-                            ),
-                            cache = cache,
-                        )
-                    }
-            }
-            .stateIn(
-                scope = coroutineScope,
-                started = SharingStarted.Eagerly,
-                initialValue = emptyMap(),
-            )
-
     /**
-     * Get the instance for [providerId], falling back to the only configured account.
+     * Resolve the instance for [providerId], or the only configured account when the id is not
+     * known.
+     *
+     * Resolved on demand rather than from a cached state flow: the instances depend on database
+     * rows that change after sign-in, and a cached snapshot could stay stale (or empty) depending
+     * on subscription timing. A `SharedFlow` with `replay = 1` gives the current provider list
+     * synchronously, and the row is read fresh each time.
      */
-    private fun instanceFor(providerId: Long?): AppleMusicInstance? {
-        val all = instances.value
-        return providerId?.let { all[it] } ?: all.values.firstOrNull()
+    /**
+     * One token provider per account.
+     *
+     * The developer token costs a ~5 MB scrape to obtain, so it must be resolved once per account
+     * rather than once per in-flight request.
+     */
+    private val tokenProviders = java.util.concurrent.ConcurrentHashMap<Long, AppleMusicTokenProvider>()
+
+    private suspend fun instanceFor(providerId: Long?): AppleMusicInstance? {
+        val allProviders = providersRepository.allProvidersToArguments.first()
+            .filter { (provider, _) -> provider.type == ProviderType.APPLE_MUSIC }
+
+        val provider = providerId
+            ?.let { id -> allProviders.firstOrNull { it.first.identifier.typeId == id } }
+            ?: allProviders.firstOrNull()
+            ?: return null
+
+        val typeId = provider.first.identifier.typeId
+        val row = database.getAppleMusicProviderDao().get(typeId).firstOrNull()
+
+        val credentials = AppleMusicCredentials(
+            developerToken = row?.developerToken.orEmpty(),
+            musicUserToken = row?.musicUserToken.orEmpty(),
+            storefront = row?.storefront ?: AppleMusicClient.DEFAULT_STOREFRONT,
+        )
+
+        val tokenProvider = tokenProviders.getOrPut(typeId) {
+            AppleMusicTokenProvider(context) {
+                credentials.developerToken.takeIf { it.isNotBlank() }
+            }
+        }
+
+        return AppleMusicInstance(
+            providerId = typeId,
+            credentials = credentials,
+            tokenProvider = tokenProvider,
+            context = context,
+            cache = cache,
+        )
     }
+
 
     private fun <T> AppleMusicResult<T>.toResult(): Result<T, Error> = when (this) {
         is AppleMusicResult.Success -> Result.Success(data)

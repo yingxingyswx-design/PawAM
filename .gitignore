@@ -32,3 +32,10 @@ scripts/dbcheck.sh
 
 a*.xml
 
+
+p*.xml
+n*.xml
+scripts/dbcheck.sh
+scripts/get-usertoken.sh
+scripts/probe-devtoken.cmd
+

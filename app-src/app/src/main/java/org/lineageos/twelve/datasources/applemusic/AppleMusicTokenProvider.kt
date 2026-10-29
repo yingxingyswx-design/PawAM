@@ -5,7 +5,9 @@
 
 package org.lineageos.twelve.datasources.applemusic
 
+import android.content.Context
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
@@ -28,12 +30,17 @@ import org.json.JSONObject
  * @param manualToken Token configured by the user, if any.
  */
 class AppleMusicTokenProvider(
+    private val context: Context,
     private val manualToken: () -> String?,
 ) {
     private val mutex = Mutex()
 
     private var scrapedToken: String? = null
     private var scrapedAtMs: Long = 0L
+
+    private val preferences by lazy {
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    }
 
     /**
      * Get a usable developer token, or null when none could be obtained.
@@ -47,6 +54,14 @@ class AppleMusicTokenProvider(
             return token
         }
 
+        if (!force) {
+            // A previously scraped token survives restarts; re-scraping costs a ~5 MB download.
+            readCachedToken()?.takeIf { !isExpired(it) }?.let {
+                Log.d(LOG_TAG, "Using persisted developer token")
+                return it
+            }
+        }
+
         if (!force && isFresh(scrapedToken)) {
             return scrapedToken
         }
@@ -58,14 +73,24 @@ class AppleMusicTokenProvider(
 
             val scraped = scrape()
             if (scraped != null) {
+                Log.d(LOG_TAG, "Scraped a developer token (len=${scraped.length})")
                 scrapedToken = scraped
                 scrapedAtMs = System.currentTimeMillis()
+                writeCachedToken(scraped)
                 scraped
             } else {
+                Log.w(LOG_TAG, "Failed to scrape a developer token")
                 // Keep serving a previously scraped token while it is still valid.
                 scrapedToken?.takeIf { !isExpired(it) }
             }
         }
+    }
+
+    private fun readCachedToken(): String? =
+        preferences.getString(KEY_CACHED_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+    private fun writeCachedToken(token: String) {
+        preferences.edit().putString(KEY_CACHED_TOKEN, token).apply()
     }
 
     private fun isFresh(token: String?) = token != null &&
@@ -73,19 +98,45 @@ class AppleMusicTokenProvider(
         !isExpired(token)
 
     private suspend fun scrape(): String? = runCatching {
-        val html = fetchString(WEB_PLAYER_URL) ?: return@runCatching null
-        val bundlePath = BUNDLE_PATTERN.find(html)?.value ?: return@runCatching null
-        val bundle = fetchString(WEB_PLAYER_URL + bundlePath) ?: return@runCatching null
+        val html = fetchString(WEB_PLAYER_URL)
+        if (html == null) {
+            Log.w(LOG_TAG, "Scrape: could not fetch the web player page")
+            return@runCatching null
+        }
+        Log.d(LOG_TAG, "Scrape: page length=${html.length}")
 
+        val bundlePath = BUNDLE_PATTERN.find(html)?.value
+        if (bundlePath == null) {
+            Log.w(
+                LOG_TAG,
+                "Scrape: no bundle in page, head=${html.take(160).replace('\n', ' ')}",
+            )
+            return@runCatching null
+        }
+
+        val bundle = fetchString(WEB_PLAYER_URL + bundlePath)
+        if (bundle == null) {
+            Log.w(LOG_TAG, "Scrape: could not fetch bundle $bundlePath")
+            return@runCatching null
+        }
+        Log.d(LOG_TAG, "Scrape: bundle=$bundlePath length=${bundle.length}")
+
+        // `value`, not `groupValues[1]`: this pattern has no capture group, and indexing a
+        // missing group throws IndexOutOfBoundsException.
         val candidates = JWT_PATTERN.findAll(bundle)
-            .map { it.groupValues[1] }
+            .map { it.value }
             .distinct()
             .toList()
+
+        Log.d(LOG_TAG, "Scrape: ${candidates.size} jwt candidates")
 
         // Prefer the web player's own token; fall back to any unexpired one.
         candidates.firstOrNull { !isExpired(it) && payloadOf(it)?.contains("AMPWebPlay") == true }
             ?: candidates.firstOrNull { !isExpired(it) }
-    }.getOrNull()
+    }.getOrElse { throwable ->
+        Log.w(LOG_TAG, "Scrape failed", throwable)
+        null
+    }
 
     private suspend fun fetchString(url: String): String? {
         val client = AppleMusicHttp.client
@@ -122,6 +173,11 @@ class AppleMusicTokenProvider(
     }.getOrDefault(false)
 
     private companion object {
+        private val LOG_TAG = "AppleMusicToken"
+
+        private const val PREFERENCES_NAME = "apple_music_token"
+        private const val KEY_CACHED_TOKEN = "developer_token"
+
         const val WEB_PLAYER_URL = "https://music.apple.com"
         const val ORIGIN = "https://music.apple.com"
 

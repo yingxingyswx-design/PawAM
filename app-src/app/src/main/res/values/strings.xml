@@ -17,6 +17,7 @@
 
     <!-- PawAM: content mode switch shown in the main navigation bar. -->
     <string name="main_fragment_section_netease">NetEase</string>
+    <string name="main_fragment_section_switch_provider">Switch provider</string>
     <string name="main_fragment_section_apple_music" translatable="false">Apple Music</string>
 
     <!-- Main fragment - Play random songs button -->

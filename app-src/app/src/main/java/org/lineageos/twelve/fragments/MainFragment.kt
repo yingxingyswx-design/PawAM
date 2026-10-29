@@ -344,10 +344,12 @@ class MainFragment : Fragment(R.layout.fragment_main) {
                 return@setOnItemSelectedListener false
             }
 
-            // PawAM: this entry is a mode switch, not a page. Returning false keeps it from
-            // becoming the selected tab while still performing the toggle.
+            // PawAM: this entry opens the provider picker instead of being a destination.
+            // Returning false keeps the current tab selected while the dialog is shown.
             if (item.itemId == R.id.contentModeFragment) {
-                viewModel.toggleContentMode()
+                findNavController().navigateSafe(
+                    R.id.action_mainFragment_to_fragment_provider_selector_dialog
+                )
                 return@setOnItemSelectedListener false
             }
 
@@ -376,15 +378,6 @@ class MainFragment : Fragment(R.layout.fragment_main) {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.contentMode.collectLatest { contentMode ->
-                        // The label names the mode a tap will switch to, so it always reads as
-                        // the action rather than as the current state.
-                        navigationBarView.menu
-                            .findItem(R.id.contentModeFragment)
-                            ?.setTitle(contentMode.other.nameStringResId)
-                    }
-                }
 
                 launch {
                     viewModel.navigationProvider.collectLatest {

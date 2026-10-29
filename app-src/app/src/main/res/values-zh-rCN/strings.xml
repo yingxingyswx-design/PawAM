@@ -13,6 +13,7 @@
 
     <!-- PawAM: 导航栏内容模式切换（"Apple Music" 为品牌名，不翻译） -->
     <string name="main_fragment_section_netease">网易云</string>
+    <string name="main_fragment_section_switch_provider">切换提供商</string>
     <string name="play_random_songs">随机播放歌曲</string>
     <string name="search_hint">搜索…</string>
     <string name="library_fragment_menu_albums">专辑</string>

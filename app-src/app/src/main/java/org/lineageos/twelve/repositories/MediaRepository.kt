@@ -115,6 +115,7 @@ class MediaRepository(
      */
     private val appleMusicDataSource = AppleMusicDataSource(
         scope,
+        context,
         providersRepository,
         database,
         cache,

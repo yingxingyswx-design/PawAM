@@ -30,7 +30,10 @@ object AppleMusicHttp {
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            // Scraping the developer token downloads the web player bundle (~3.3 MB), which needs
+            // far more than a normal API round trip on a mobile connection.
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 }

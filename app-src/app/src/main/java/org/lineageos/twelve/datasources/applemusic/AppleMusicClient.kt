@@ -5,6 +5,7 @@
 
 package org.lineageos.twelve.datasources.applemusic
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -237,11 +238,21 @@ class AppleMusicClient(
 
         runCatching {
             AppleMusicHttp.client.newCall(builder.build()).execute().use { response ->
+                Log.d(LOG_TAG, "GET ${url.substringAfter("/v1")} -> ${response.code}")
+
                 when (response.code) {
                     200 -> JSONObject(response.body?.string().orEmpty())
                     401, 403 -> JSONObject().put(STATUS_MARKER, STATUS_UNAUTHORIZED)
                     404 -> JSONObject().put(STATUS_MARKER, STATUS_NOT_FOUND)
-                    else -> null
+                    else -> {
+                        // The body distinguishes "wrong endpoint" from "wrong token" quickly.
+                        Log.w(
+                            LOG_TAG,
+                            "Unexpected ${response.code}: " +
+                                response.body?.string()?.take(200),
+                        )
+                        null
+                    }
                 }
             }
         }.getOrNull()?.let { json ->
@@ -269,6 +280,8 @@ class AppleMusicClient(
     private fun storefront() = credentials().storefront.ifBlank { DEFAULT_STOREFRONT }
 
     companion object {
+        private const val LOG_TAG = "AppleMusicClient"
+
         const val DEFAULT_STOREFRONT = "us"
         private const val STATUS_MARKER = "__pawam_status"
         private const val STATUS_UNAUTHORIZED = "unauthorized"
