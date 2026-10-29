@@ -66,38 +66,26 @@ object AppleMusicDrm {
             // not matched what the CDM expects (see docs/HANDOVER.md).
             val provisionUrl = request.defaultUrl.ifBlank { license.certUrl }
 
-            // Google's provisioning endpoint expects the OMA form field `signed_request` holding
-            // the base64 of the provision request. Posting the raw protobuf yields HTTP 400.
-            val formBody = "signed_request=" + java.net.URLEncoder.encode(
-                java.util.Base64.getEncoder().encodeToString(request.data),
-                "UTF-8",
+            // Try every plausible encoding in one pass: the service answers 400 both for an
+            // unparseable body and for a rejected one, so guessing one format per build wastes
+            // cycles. All attempts are logged for a single diagnostic run.
+            val (payload, attempts) = ProvisioningFormats.tryAll(
+                client = httpClient,
+                url = provisionUrl,
+                provisionRequest = request.data,
             )
 
-            val httpRequest = Request.Builder()
-                .url(provisionUrl)
-                .post(formBody.toRequestBody("application/x-www-form-urlencoded".toMediaType()))
-                .header("Authorization", "Bearer ${license.developerToken}")
-                .header("Media-User-Token", license.musicUserToken)
-                .header("Origin", AppleMusicHttp.ORIGIN)
-                .header("User-Agent", AppleMusicHttp.USER_AGENT)
-                .build()
-
-            Log.d(LOG_TAG, "Provisioning via $provisionUrl")
-
-            val (code, payload) = runCatching {
-                httpClient.newCall(httpRequest).execute().use { it.code to it.body?.bytes() }
-            }.getOrNull() ?: throw IllegalStateException("Provisioning request failed")
-
-            Log.d(
-                LOG_TAG,
-                "Provisioning HTTP $code (${payload?.size ?: 0} bytes) body=" +
-                    payload?.joinToString("") { b -> "%02x".format(b) },
-            )
-
-            if (code != 200 || payload == null || payload.isEmpty()) {
-                throw IllegalStateException("Provisioning rejected: HTTP $code")
+            for (attempt in attempts) {
+                Log.d(
+                    LOG_TAG,
+                    "Provisioning ${attempt.name}: http=${attempt.code} " +
+                        "size=${attempt.bodySize} preview=${attempt.bodyPreview}",
+                )
             }
 
+            if (payload == null || payload.isEmpty()) {
+                throw IllegalStateException("Provisioning rejected in every format")
+            }
             // The CDM parses the provisioning reply as the legacy OMA envelope
             // `{"signed_response":"<base64>"}`, but Apple answers with a protobuf. Wrapping the
             // whole protobuf fails with `Cannot locate start substring`, so the inner

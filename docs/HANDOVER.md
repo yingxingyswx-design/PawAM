@@ -284,3 +284,23 @@ CDM 始终报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`。
 **下一步最有效的一步**：在已翻墙的设备上抓一次 Google 官方 provisioning 服务的
 真实响应体（`POST www.googleapis.com/certificateprovisioning/v1/devicecertificates/create`
 配合 MediaDrm 的 provision request），照它的结构构造 Apple 端点的响应。
+
+#### provisioning 定位结论（第 27 轮，一次性尝试五种编码）
+
+`ProvisioningFormats.tryAll` 在同一次请求里依次尝试并记录结果：
+
+| 编码 | 结果 |
+|---|---|
+| json + base64url | 400 `{"error":{"message":"Invalid Value"}}` |
+| json + base64 | 400 `Invalid Value` |
+| form + base64url | 400 `Invalid Value` |
+| form + base64 | 400 `Invalid Value` |
+| raw protobuf | 400 `Invalid JSON payload received. Unexpected token` |
+
+**结论**：JSON 编码是正确的（不再报格式错误），但 Google 判 `Invalid Value`——
+说明 CDM 提供的 provision request 与内嵌 API key 绑定官方应用签名，第三方 App 无法使用。
+**Google 这条 provisioning 路径对第三方客户端不可用。**
+
+因此只剩 Apple 的 `widevine-cert-url`。它的响应是 protobuf，而 CDM 解析该响应时
+报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`——
+需要确认 CDM 期望的确切响应封装（JSON envelope 里的字段名与 base64 编码方式）。
