@@ -449,24 +449,6 @@ class PlaybackService : MediaLibraryService() {
 
         player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
-            // NetEase's CDN rejects media requests that arrive without a Referer, so the player
-            // would buffer forever (or stop) even though the URL itself is valid. Supplying the
-            // same headers the web player uses makes those streams play.
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-                    androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                        .setUserAgent(
-                            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
-                                "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
-                        )
-                        .setDefaultRequestProperties(
-                            mapOf(
-                                "Referer" to "https://music.163.com/",
-                                "Origin" to "https://music.163.com",
-                            )
-                        )
-                )
-            )
             .setHandleAudioBecomingNoisy(true)
             .setRenderersFactory(
                 TwelveRenderersFactory(
