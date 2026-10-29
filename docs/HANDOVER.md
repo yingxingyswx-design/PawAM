@@ -240,3 +240,31 @@ adb shell ping -c 2 www.googleapis.com              -> 100% packet loss
 
 **可行路径**：在手机上开启 VPN 后播放一次，让 CDM 完成一次 provisioning（证书会被缓存），
 之后再验证是否无需 VPN 也能播放。这是外部网络条件问题，不是代码缺陷。
+
+#### provisioning 尝试记录（第 22 轮）
+
+重要发现：**Apple 自己提供 provisioning 端点**，不需要 Google。
+
+```
+POST https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/widevineCert
+  Authorization: Bearer <dev token>, Media-User-Token, Origin
+  body: provision request（protobuf）
+-> HTTP 200, 705 字节 protobuf（0A BB 02 08 03 12 10 ...）
+```
+
+已把 `executeProvisionRequest` 从 Google 地址改为该地址（走 `widevine-cert-url`），
+不再依赖可能被墙的 `www.googleapis.com`。
+
+CDM 对响应格式的要求（按尝试顺序记录）：
+
+| 返回内容 | CDM 报错 |
+|---|---|
+| 空响应 | `Failed to handle provision response: BAD_VALUE` |
+| 裸 protobuf（705B） | `Provisioning response message is an invalid JSON/base64 string` |
+| 整个 protobuf 的 JSON 信封（962B） | `ExtractAndDecodeSignedMessage: Cannot locate start substring` |
+| 内层 field 1 + JSON 信封 | 同上 |
+| 内层 field 1 + OMA XML 信封（540B） | 同上 |
+
+结论：CDM 在响应里寻找某个特定起始标记，尚未命中。下一步应打印 CDM 期望的格式
+（Widevine `certificate_provisioning.cpp` 的 `ExtractAndDecodeSignedMessage`），
+或对比 Google 官方 provisioning 服务返回的响应结构（VPN 下可抓到）。

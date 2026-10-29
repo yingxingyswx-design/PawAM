@@ -61,18 +61,23 @@ object AppleMusicDrm {
             uuid: UUID,
             request: androidx.media3.exoplayer.drm.ExoMediaDrm.ProvisionRequest,
         ): androidx.media3.exoplayer.drm.MediaDrmCallback.Response {
-            // The CDM asks for provisioning when this app has no provisioned Widevine
-            // certificate yet. Apple only supplies a certificate bundle for its own flow, so the
-            // standard Widevine provisioning service is used once; the resulting certificate is
-            // cached by the CDM and later licence requests go to Apple.
-            val body = request.data
+            // The CDM asks for provisioning when this app has no Widevine device certificate.
+            // Apple provides its own provisioning endpoint (`widevine-cert-url`) in the playback
+            // lease, so Google's certificate service — which may be blocked, as it is on some
+            // networks — is not needed at all.
+            val provisionUrl = license.certUrl.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("No provisioning endpoint in the lease")
 
             val httpRequest = Request.Builder()
-                .url(request.defaultUrl)
-                .post(body.toRequestBody("application/octet-stream".toMediaType()))
+                .url(provisionUrl)
+                .post(request.data.toRequestBody("application/octet-stream".toMediaType()))
+                .header("Authorization", "Bearer ${license.developerToken}")
+                .header("Media-User-Token", license.musicUserToken)
+                .header("Origin", AppleMusicHttp.ORIGIN)
+                .header("User-Agent", AppleMusicHttp.USER_AGENT)
                 .build()
 
-            Log.d(LOG_TAG, "Provisioning via ${request.defaultUrl}")
+            Log.d(LOG_TAG, "Provisioning via $provisionUrl")
 
             val (code, payload) = runCatching {
                 httpClient.newCall(httpRequest).execute().use { it.code to it.body?.bytes() }
@@ -84,7 +89,16 @@ object AppleMusicDrm {
                 throw IllegalStateException("Provisioning rejected: HTTP $code")
             }
 
-            return androidx.media3.exoplayer.drm.MediaDrmCallback.Response(payload)
+            // The CDM parses the provisioning reply as the legacy OMA envelope
+            // `{"signed_response":"<base64>"}`, but Apple answers with a protobuf. Wrapping the
+            // whole protobuf fails with `Cannot locate start substring`, so the inner
+            // `signed_response` field has to be unwrapped first.
+            val body = ProvisioningResponse.toJsonEnvelope(payload)
+            Log.d(LOG_TAG, "Provisioning envelope size=${body.length}")
+
+            return androidx.media3.exoplayer.drm.MediaDrmCallback.Response(
+                body.toByteArray(Charsets.UTF_8)
+            )
         }
 
         override fun executeKeyRequest(

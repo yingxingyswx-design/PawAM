@@ -55,6 +55,8 @@ class AppleMusicPlayback(
         val licenseUrl: String? = null,
         /** Original `#EXT-X-KEY` data URI, echoed verbatim in the licence request. */
         val keyUri: String? = null,
+        /** Apple's Widevine provisioning endpoint (`widevine-cert-url`), if offered. */
+        val certUrl: String? = null,
     )
 
     /**
@@ -135,6 +137,9 @@ class AppleMusicPlayback(
         val licenseUrl = songObject?.optString("hls-key-server-url")
             ?.takeIf { it.isNotBlank() }
 
+        val certUrl = songObject?.optString("widevine-cert-url")
+            ?.takeIf { it.isNotBlank() }
+
         val assets = runCatching {
             JSONObject(payload)
                 .optJSONArray("songList")
@@ -197,6 +202,7 @@ class AppleMusicPlayback(
             isHls = isHls,
             licenseUrl = licenseUrl,
             keyUri = keyUri,
+            certUrl = certUrl,
         )
     }
 

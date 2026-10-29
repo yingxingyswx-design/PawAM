@@ -27,6 +27,7 @@ object AppleMusicStreamRegistry {
      * @param adamId Catalog song id.
      * @param developerToken Developer token valid at resolution time.
      * @param musicUserToken User token valid at resolution time.
+     * @param certUrl Apple's Widevine provisioning endpoint, when offered.
      */
     data class License(
         val licenseUrl: String,
@@ -34,6 +35,7 @@ object AppleMusicStreamRegistry {
         val adamId: String,
         val developerToken: String,
         val musicUserToken: String,
+        val certUrl: String = "",
     )
 
     private val licenses = ConcurrentHashMap<String, License>()

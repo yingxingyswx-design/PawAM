@@ -427,6 +427,7 @@ class AppleMusicDataSource(
                                 adamId = parsed.id,
                                 developerToken = instance.credentials.developerToken,
                                 musicUserToken = instance.credentials.musicUserToken,
+                                certUrl = lease.certUrl.orEmpty(),
                             ),
                         )
 
