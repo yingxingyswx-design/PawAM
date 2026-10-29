@@ -88,7 +88,11 @@ object AppleMusicDrm {
                 httpClient.newCall(httpRequest).execute().use { it.code to it.body?.bytes() }
             }.getOrNull() ?: throw IllegalStateException("Provisioning request failed")
 
-            Log.d(LOG_TAG, "Provisioning HTTP $code (${payload?.size ?: 0} bytes)")
+            Log.d(
+                LOG_TAG,
+                "Provisioning HTTP $code (${payload?.size ?: 0} bytes) body=" +
+                    payload?.joinToString("") { b -> "%02x".format(b) },
+            )
 
             if (code != 200 || payload == null || payload.isEmpty()) {
                 throw IllegalStateException("Provisioning rejected: HTTP $code")
