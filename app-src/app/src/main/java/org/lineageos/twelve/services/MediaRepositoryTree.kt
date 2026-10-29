@@ -262,7 +262,14 @@ class MediaRepositoryTree(
             val searchQuery = item.requestMetadata.searchQuery
             when {
                 searchQuery != null -> addAll(search(searchQuery))
-                item.localConfiguration?.uri != null -> add(item)
+
+                // Apple Music stream URLs are signed and short-lived, so a URL captured when an
+                // album was listed is often already expired by the time the user presses play —
+                // which surfaces as "the song played once, then plays silently". Re-resolving the
+                // item asks the data source for a fresh URL instead of reusing the stale one.
+                item.localConfiguration?.uri != null &&
+                    !item.mediaId.startsWith(APPLE_MUSIC_URI_PREFIX) -> add(item)
+
                 else -> getItem(item.mediaId)?.let { mediaItem ->
                     add(mediaItem)
                 }
@@ -348,6 +355,9 @@ class MediaRepositoryTree(
         private val LOG_TAG = MediaRepositoryTree::class.simpleName!!
 
         // Root ID
+        /** PawAM: item URIs owned by the Apple Music data source. */
+        private const val APPLE_MUSIC_URI_PREFIX = "applemusic://"
+
         private const val ROOT_MEDIA_ITEM_ID = "[root]"
 
         // No permissions ID

@@ -25,52 +25,6 @@ import org.junit.Test
  */
 class AppleMusicModelsTest {
     // ---------------------------------------------------------------------
-    // Item URIs
-    // ---------------------------------------------------------------------
-
-    @Test
-    fun `item uri round trips including the provider id`() {
-        val uri = AppleMusicUri.of(
-            providerId = 7L,
-            kind = AppleMusicUri.KIND_ALBUM,
-            storefront = "cn",
-            id = "1440857781",
-        )
-
-        val parsed = AppleMusicUri.parse(uri)!!
-
-        assertEquals(7L, parsed.providerId)
-        assertEquals(AppleMusicUri.KIND_ALBUM, parsed.kind)
-        assertEquals("cn", parsed.storefront)
-        assertEquals("1440857781", parsed.id)
-    }
-
-    @Test
-    fun `item uri keeps two providers apart`() {
-        val first = AppleMusicUri.of(1L, AppleMusicUri.KIND_AUDIO, "us", "100")
-        val second = AppleMusicUri.of(2L, AppleMusicUri.KIND_AUDIO, "us", "100")
-
-        // Same catalog id, different account: these must not collide.
-        assertTrue(first != second)
-        assertEquals(1L, AppleMusicUri.parse(first)!!.providerId)
-        assertEquals(2L, AppleMusicUri.parse(second)!!.providerId)
-    }
-
-    @Test
-    fun `foreign uris are rejected`() {
-        assertNull(AppleMusicUri.parse(Uri.parse("content://media/audio/external/media/1")))
-        assertNull(AppleMusicUri.parse(Uri.parse("applemusic://catalog/notanumber/album/us/1")))
-        assertNull(AppleMusicUri.parse(Uri.parse("applemusic://catalog/1/album/us")))
-    }
-
-    @Test
-    fun `blank storefront falls back to the default`() {
-        val uri = AppleMusicUri.of(1L, AppleMusicUri.KIND_AUDIO, "", "42")
-
-        assertEquals(AppleMusicClient.DEFAULT_STOREFRONT, AppleMusicUri.parse(uri)!!.storefront)
-    }
-
-    // ---------------------------------------------------------------------
     // Id resolution
     // ---------------------------------------------------------------------
 

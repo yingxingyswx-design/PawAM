@@ -212,8 +212,8 @@ internal fun JSONObject.ids(): AppleMusicIds {
     return AppleMusicIds(
         catalogId = catalogResource?.optString("id")?.takeIf { it.isNotBlank() }
             ?: playParams?.optString("catalogId")?.takeIf { it.isNotBlank() && it != "null" }
-            ?: rawId?.takeIf { !it.startsWith("l.") && !it.startsWith("i.") },
-        libraryId = rawId?.takeIf { it.startsWith("l.") || it.startsWith("i.") },
+            ?: rawId?.takeIf { !it.isLibraryScoped() },
+        libraryId = rawId?.takeIf { it.isLibraryScoped() },
     )
 }
 
@@ -304,3 +304,13 @@ internal fun JSONObject.toPlaylist(storefront: String): AppleMusicPlaylist? {
         trackCount = attributes.optInt("trackCount", 0),
     )
 }
+
+/**
+ * Whether a resource id is scoped to one user's library rather than the shared catalog.
+ *
+ * Apple uses a prefix per resource kind: `l.` albums, `i.` songs, `p.` playlists. Such an id
+ * cannot be used to fetch catalog metadata or a playback lease, so all of them must be treated
+ * the same way — handling only some prefixes silently turns a library id into a bogus catalog id.
+ */
+internal fun String.isLibraryScoped(): Boolean =
+    startsWith("l.") || startsWith("i.") || startsWith("p.")

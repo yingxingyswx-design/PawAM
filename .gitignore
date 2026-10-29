@@ -39,3 +39,6 @@ scripts/dbcheck.sh
 scripts/get-usertoken.sh
 scripts/probe-devtoken.cmd
 
+
+v*.xml
+
