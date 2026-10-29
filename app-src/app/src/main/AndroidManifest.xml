@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
      SPDX-FileCopyrightText: The LineageOS Project
      SPDX-License-Identifier: Apache-2.0
@@ -70,11 +70,12 @@
             android:label="@string/title_activity_settings"
             android:theme="@style/Theme.SettingsLib" />
 
+        <!-- PawAM: shared built-in browser used for provider sign-in. -->
         <activity
-            android:name=".AppleMusicLoginActivity"
+            android:name=".WebLoginActivity"
             android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="false"
-            android:label="@string/apple_music_sign_in"
+            android:label="@string/web_login_title"
             android:theme="@style/Theme.Twelve" />
 
         <activity

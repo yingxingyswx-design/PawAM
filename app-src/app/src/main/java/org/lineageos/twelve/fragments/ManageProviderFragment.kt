@@ -1,13 +1,15 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: The LineageOS Project
  * SPDX-License-Identifier: Apache-2.0
  */
 
 package org.lineageos.twelve.fragments
 
+import android.app.Activity
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
@@ -27,6 +29,7 @@ import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.lineageos.twelve.WebLoginActivity
 import org.lineageos.twelve.R
 import org.lineageos.twelve.ext.Bundle
 import org.lineageos.twelve.ext.getParcelable
@@ -58,7 +61,22 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
     private val providerNameTextInputLayout by getViewProperty<TextInputLayout>(R.id.providerNameTextInputLayout)
     private val providerTypeAutoCompleteTextView by getViewProperty<MaterialAutoCompleteTextView>(R.id.providerTypeAutoCompleteTextView)
     private val providerTypeTextInputLayout by getViewProperty<TextInputLayout>(R.id.providerTypeTextInputLayout)
+    private val signInMaterialButton by getViewProperty<MaterialButton>(R.id.signInMaterialButton)
     private val toolbar by getViewProperty<MaterialToolbar>(R.id.toolbar)
+
+    /**
+     * Launcher for the sign-in flow of the current provider type.
+     *
+     * The login activities write the token straight to the provider row; the Room-backed
+     * arguments flow re-emits on that change, so the screen updates without an explicit reload.
+     */
+    private val signInLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            signInMaterialButton.setText(R.string.sign_in_completed)
+        }
+    }
 
     // Arguments
     private val providerIdentifier: ProviderIdentifier?
@@ -188,6 +206,18 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
             showDeleteDialog()
         }
 
+        // PawAM: sign-in entry point. Only providers that authenticate through a web flow expose
+        // it, and only after the provider exists (the token is stored on its row).
+        signInMaterialButton.setOnClickListener {
+            val identifier = providerIdentifier ?: return@setOnClickListener
+
+            if (selectedProviderType !in signInProviderTypes) {
+                return@setOnClickListener
+            }
+
+            signInLauncher.launch(WebLoginActivity.createIntent(requireContext(), identifier))
+        }
+
         providerTypeAutoCompleteTextView.setSimpleItems(
             manageableProviderTypes.map {
                 getString(it.nameStringResId)
@@ -219,6 +249,8 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
                         deleteMaterialButton.isVisible = inEditMode
 
                         providerTypeTextInputLayout.isEnabled = !inEditMode
+
+                        updateSignInButtonVisibility()
                     }
                 }
 
@@ -269,6 +301,8 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
 
                         if (providerType != selectedProviderType) {
                             selectedProviderType = providerType
+
+                            updateSignInButtonVisibility()
 
                             providerType?.also {
                                 providerTypeAutoCompleteTextView.selectItem(
@@ -321,6 +355,16 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
             .show()
     }
 
+    /**
+     * Show the sign-in button only for providers that authenticate through a web flow, and only
+     * when editing an existing provider.
+     */
+    private fun updateSignInButtonVisibility() {
+        val canSignIn = selectedProviderType in signInProviderTypes
+
+        signInMaterialButton.isVisible = viewModel.inEditMode.value && canSignIn
+    }
+
     private fun showDeleteDialog() {
         MaterialAlertDialogBuilder(requireContext())
             .setMessage(R.string.delete_provider_confirmation)
@@ -356,6 +400,14 @@ class ManageProviderFragment : Fragment(R.layout.fragment_manage_provider) {
         }
 
         private val manageableProviderTypes = ProviderType.entries.filter { it.canBeManaged }
+
+        /**
+         * Provider types that authenticate through the built-in browser.
+         */
+        private val signInProviderTypes = setOf(
+            ProviderType.APPLE_MUSIC,
+            ProviderType.NETEASE,
+        )
 
         /**
          * Create a [Bundle] to use as the arguments for this fragment.

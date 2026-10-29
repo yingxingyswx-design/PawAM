@@ -22,3 +22,10 @@ ui*.xml
 badging.txt
 screenshots/
 
+
+# user scratch
+u*.xml
+t*.xml
+s*.xml
+scripts/dbcheck.sh
+

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-FileCopyrightText: The LineageOS Project
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,6 +23,7 @@ import org.lineageos.twelve.database.dao.AmpacheProviderDao
 import org.lineageos.twelve.database.dao.AppleMusicProviderDao
 import org.lineageos.twelve.database.dao.FavoriteDao
 import org.lineageos.twelve.database.dao.JellyfinProviderDao
+import org.lineageos.twelve.database.dao.NetEaseProviderDao
 import org.lineageos.twelve.database.dao.MediaStatsDao
 import org.lineageos.twelve.database.dao.PlaylistDao
 import org.lineageos.twelve.database.dao.PlaylistItemCrossRefDao
@@ -34,6 +35,7 @@ import org.lineageos.twelve.database.entities.AppleMusicProvider
 import org.lineageos.twelve.database.entities.Favorite
 import org.lineageos.twelve.database.entities.JellyfinProvider
 import org.lineageos.twelve.database.entities.LocalMediaStats
+import org.lineageos.twelve.database.entities.NetEaseProvider
 import org.lineageos.twelve.database.entities.Playlist
 import org.lineageos.twelve.database.entities.PlaylistItemCrossRef
 import org.lineageos.twelve.database.entities.ResumptionItem
@@ -57,12 +59,13 @@ import org.lineageos.twelve.database.entities.SubsonicProvider
         AmpacheProvider::class,
         AppleMusicProvider::class,
         JellyfinProvider::class,
+        NetEaseProvider::class,
         SubsonicProvider::class,
 
         /* Local Media Stats */
         LocalMediaStats::class,
     ],
-    version = 11,
+    version = 12,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -74,6 +77,7 @@ import org.lineageos.twelve.database.entities.SubsonicProvider
         AutoMigration(from = 8, to = 9),
         AutoMigration(from = 9, to = 10, spec = TwelveDatabase.Companion.MigrationSpec9To10::class),
         AutoMigration(from = 10, to = 11),
+        AutoMigration(from = 11, to = 12),
     ],
 )
 @TypeConverters(
@@ -85,6 +89,7 @@ abstract class TwelveDatabase : RoomDatabase() {
     abstract fun getAppleMusicProviderDao(): AppleMusicProviderDao
     abstract fun getFavoriteDao(): FavoriteDao
     abstract fun getJellyfinProviderDao(): JellyfinProviderDao
+    abstract fun getNetEaseProviderDao(): NetEaseProviderDao
     abstract fun getLocalMediaStatsProviderDao(): MediaStatsDao
     abstract fun getPlaylistDao(): PlaylistDao
     abstract fun getPlaylistItemCrossRefDao(): PlaylistItemCrossRefDao

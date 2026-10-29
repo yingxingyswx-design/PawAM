@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-FileCopyrightText: 2026 The PawAM Project
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -137,6 +137,28 @@ class NetEaseClient(
 
     private fun String.toJsonObject() = runCatching { JSONObject(this) }.getOrNull()
 
+    /**
+     * Resolve the signed-in account.
+     *
+     * Returns null when there is no session or it has expired. NetEase reports an expired session
+     * as `code: 200` with `account: null`, so the presence of the account object — not the status
+     * code — decides validity.
+     */
+    suspend fun account(): NetEaseAccount? {
+        if (!isAuthenticated) {
+            return null
+        }
+
+        val root = eapi(ACCOUNT_PATH, JSONObject()) ?: return null
+        val account = root.optJSONObject("account") ?: return null
+        val profile = root.optJSONObject("profile")
+
+        return NetEaseAccount(
+            userId = account.optLong("id", 0L).takeIf { it > 0L },
+            nickname = profile?.optString("nickname")?.takeIf { it.isNotBlank() },
+        )
+    }
+
     companion object {
         const val WEB_HOST = "https://music.163.com"
         const val INTERFACE_HOST = "https://interface.music.163.com"
@@ -149,6 +171,9 @@ class NetEaseClient(
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
         private const val REFERER = "https://music.163.com/"
+
+        /** Account lookup. An expired session answers with `account: null`, not an error. */
+        private const val ACCOUNT_PATH = "/api/w/nuser/account/get"
 
         /**
          * Stable per-install device identifier.

@@ -12,6 +12,7 @@ import org.lineageos.twelve.datasources.AmpacheDataSource
 import org.lineageos.twelve.datasources.AppleMusicDataSource
 import org.lineageos.twelve.datasources.JellyfinDataSource
 import org.lineageos.twelve.datasources.MediaDataSource
+import org.lineageos.twelve.datasources.NetEaseDataSource
 import org.lineageos.twelve.datasources.SubsonicDataSource
 
 /**
@@ -111,6 +112,19 @@ enum class ProviderType(
             AppleMusicDataSource.ARG_MEDIA_USER_TOKEN,
             AppleMusicDataSource.ARG_STOREFRONT,
         ),
+        true,
+    ),
+
+    /**
+     * NetEase Cloud Music provider.
+     *
+     * Takes no configuration arguments: the session is established through the official web login
+     * page and stored as a `MUSIC_U` cookie, so there is nothing for the user to paste.
+     */
+    NETEASE(
+        R.string.provider_type_netease,
+        R.drawable.ic_netease,
+        listOf(),
         true,
     ),
 }

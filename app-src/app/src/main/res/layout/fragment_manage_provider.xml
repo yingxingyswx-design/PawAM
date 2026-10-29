@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
      SPDX-FileCopyrightText: The LineageOS Project
      SPDX-License-Identifier: Apache-2.0
@@ -91,6 +91,22 @@
                 android:layout_height="wrap_content"
                 app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
                 app:spanCount="1" />
+
+            <!--
+                PawAM: MusicKit sign-in. Shown only for providers that need a user session
+                (Apple Music), and only once the provider has been saved, because the token is
+                written to that provider's row.
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/signInMaterialButton"
+                style="?attr/materialButtonTonalStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp"
+                android:text="@string/web_login_title"
+                android:visibility="gone"
+                app:icon="@drawable/ic_apple_music" />
 
         </LinearLayout>
 

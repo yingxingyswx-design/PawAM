@@ -31,6 +31,7 @@ import org.lineageos.twelve.datasources.FileDataSource
 import org.lineageos.twelve.datasources.JellyfinDataSource
 import org.lineageos.twelve.datasources.MediaDataSource
 import org.lineageos.twelve.datasources.MediaStoreDataSource
+import org.lineageos.twelve.datasources.NetEaseDataSource
 import org.lineageos.twelve.datasources.SubsonicDataSource
 import org.lineageos.twelve.ext.DEFAULT_PROVIDER_KEY
 import org.lineageos.twelve.ext.defaultProvider
@@ -120,6 +121,15 @@ class MediaRepository(
     )
 
     /**
+     * NetEase Cloud Music data source.
+     */
+    private val netEaseDataSource = NetEaseDataSource(
+        scope,
+        providersRepository,
+        database,
+    )
+
+    /**
      * File data source.
      */
     private val fileDataSource = FileDataSource(
@@ -134,6 +144,7 @@ class MediaRepository(
             jellyfinDataSource,
             ampacheDataSource,
             appleMusicDataSource,
+            netEaseDataSource,
             fileDataSource,
         )
     ).asStateFlow()
@@ -385,6 +396,7 @@ class MediaRepository(
         ProviderType.JELLYFIN -> jellyfinDataSource
         ProviderType.AMPACHE -> ampacheDataSource
         ProviderType.APPLE_MUSIC -> appleMusicDataSource
+        ProviderType.NETEASE -> netEaseDataSource
     }
 
     /**

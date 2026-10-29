@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
      SPDX-FileCopyrightText: The LineageOS Project
      SPDX-License-Identifier: Apache-2.0
@@ -170,8 +170,18 @@
     <string name="apple_music_storefront">Storefront</string>
     <string name="apple_music_storefront_error">Enter a two letter storefront code, for example us</string>
     <string name="apple_music_subscription">Subscription active</string>
-    <string name="apple_music_sign_in">Sign in to Apple Music</string>
+    <string name="web_login_title">Sign in</string>
+    <string name="web_login_reload">Reload page</string>
     <string name="apple_music_library_albums">Library albums</string>
+
+    <!-- PawAM: NetEase provider -->
+    <string name="provider_type_netease" translatable="false">NetEase Cloud Music</string>
+
+    <string name="netease_signed_in">Signed in</string>
+    <string name="netease_nickname">Account</string>
+
+    <!-- PawAM: shared -->
+    <string name="sign_in_completed">Signed in</string>
 
     <!-- Provider arguments -->
     <string name="provider_argument_server">Server</string>

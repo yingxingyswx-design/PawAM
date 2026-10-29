@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     SPDX-FileCopyrightText: Material Design Authors / Google LLC
+     SPDX-License-Identifier: Apache-2.0
+
+     PawAM: generic cloud glyph used to label the NetEase provider.
+
+     Deliberately not the NetEase logo or app icon: those are NetEase trademarks, and using them
+     in a third-party client would imply an affiliation that does not exist.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="#000000"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M240,840q-50,0 -85,-35t-35,-85q0,-50 35,-85t85,-35q50,0 85,35t35,85v40h440V520h80v200q0,50 -35,85t-85,35H240ZM160,600h160v-40q0,-17 -11.5,-28.5T280,520q-17,0 -28.5,11.5T240,560q0,17 -11.5,28.5T200,600Zm0,-160q17,0 28.5,11.5T200,480q0,17 11.5,28.5T240,520q17,0 28.5,11.5T280,560v40h160v-40q0,-50 -35,-85t-85,-35q-50,0 -85,35t-35,85v40h80Zm280,-80q0,-33 23.5,-56.5T520,280h320v80H560v280H400V360Zm160,0q-33,0 -56.5,-23.5T520,280q0,-33 23.5,-56.5T600,200q33,0 56.5,23.5T680,280q0,33 -23.5,56.5T600,360Z" />
+
+</vector>

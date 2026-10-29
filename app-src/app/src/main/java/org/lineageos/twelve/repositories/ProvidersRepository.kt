@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
 import org.lineageos.twelve.database.TwelveDatabase
 import org.lineageos.twelve.database.entities.AppleMusicProvider
+import org.lineageos.twelve.database.entities.NetEaseProvider
 import org.lineageos.twelve.datasources.AmpacheDataSource
 import org.lineageos.twelve.datasources.AppleMusicDataSource
 import org.lineageos.twelve.datasources.applemusic.AppleMusicClient
@@ -186,6 +187,22 @@ class ProvidersRepository(
             }
         }
 
+    // NetEase
+    private val netEaseProviders = database.getNetEaseProviderDao().getAll()
+        .distinctUntilChanged()
+        .mapLatest {
+            it.map { provider ->
+                Provider(
+                    ProviderType.NETEASE,
+                    provider.id,
+                    // Prefer the signed-in nickname: it is far more useful in the provider list
+                    // than the placeholder name typed before signing in.
+                    provider.nickname?.takeIf { nickname -> nickname.isNotBlank() }
+                        ?: provider.name,
+                ) to Bundle()
+            }
+        }
+
     // All providers
     val allProvidersToArguments = combine(
         mediaStoreProviders,
@@ -193,6 +210,7 @@ class ProvidersRepository(
         jellyfinProviders,
         ampacheProviders,
         appleMusicProviders,
+        netEaseProviders,
     ) { it ->
         buildList {
             it.forEach {
@@ -315,6 +333,17 @@ class ProvidersRepository(
 
             providerType to typeId
         }
+
+        ProviderType.NETEASE -> {
+            val typeId = database.getNetEaseProviderDao().insert(
+                NetEaseProvider(
+                    id = 0L,
+                    name = name,
+                )
+            )
+
+            providerType to typeId
+        }
     }
 
     /**
@@ -397,6 +426,11 @@ class ProvidersRepository(
                     storefront,
                 )
             }
+
+            ProviderType.NETEASE -> database.getNetEaseProviderDao().updateName(
+                providerIdentifier.typeId,
+                name,
+            )
         }
     }
 
@@ -424,6 +458,10 @@ class ProvidersRepository(
             ProviderType.APPLE_MUSIC -> database.getAppleMusicProviderDao().delete(
                 providerIdentifier.typeId
             )
+
+            ProviderType.NETEASE -> database.getNetEaseProviderDao().delete(
+                providerIdentifier.typeId
+            )
         }
     }
 
@@ -444,6 +482,50 @@ class ProvidersRepository(
         database.getAppleMusicProviderDao().updateMusicUserToken(
             providerIdentifier.typeId,
             musicUserToken,
+        )
+    }
+
+    /**
+     * Persist the NetEase session obtained from the built-in browser.
+     *
+     * Only the session columns are written: the display name is owned by the provider
+     * configuration and must survive a re-sign-in unchanged.
+     */
+    suspend fun updateNetEaseSession(
+        providerIdentifier: ProviderIdentifier,
+        cookie: String,
+        userId: Long?,
+        nickname: String?,
+    ) {
+        if (providerIdentifier.type != ProviderType.NETEASE) {
+            throw IllegalArgumentException("Not a NetEase provider")
+        }
+
+        database.getNetEaseProviderDao().updateSession(
+            providerIdentifier.typeId,
+            cookie,
+            userId,
+            nickname,
+        )
+    }
+
+    /**
+     * Persist the storefront discovered during Apple Music sign-in.
+     *
+     * The storefront selects the catalog region and is part of request URLs, so an account
+     * signing in from a different region would otherwise keep hitting the wrong catalog.
+     */
+    suspend fun updateAppleMusicStorefront(
+        providerIdentifier: ProviderIdentifier,
+        storefront: String,
+    ) {
+        if (providerIdentifier.type != ProviderType.APPLE_MUSIC) {
+            throw IllegalArgumentException("Not an Apple Music provider")
+        }
+
+        database.getAppleMusicProviderDao().updateStorefront(
+            providerIdentifier.typeId,
+            storefront.lowercase(),
         )
     }
 

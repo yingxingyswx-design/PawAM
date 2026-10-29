@@ -43,8 +43,8 @@ interface AppleMusicProviderDao {
     /**
      * Store only the user token.
      *
-     * Signing in through MusicKit yields just this value, and the rest of the row (developer
-     * token, storefront, name) must stay untouched.
+     * Signing in yields just this value, and the rest of the row (developer token, storefront,
+     * name) must stay untouched.
      */
     @Query(
         """
@@ -54,6 +54,15 @@ interface AppleMusicProviderDao {
         """
     )
     suspend fun updateMusicUserToken(id: Long, musicUserToken: String)
+
+    @Query(
+        """
+        UPDATE AppleMusicProvider
+        SET storefront = :storefront
+        WHERE apple_music_provider_id = :id
+        """
+    )
+    suspend fun updateStorefront(id: Long, storefront: String)
 
     @Query("DELETE FROM AppleMusicProvider WHERE apple_music_provider_id = :id")
     suspend fun delete(id: Long)
