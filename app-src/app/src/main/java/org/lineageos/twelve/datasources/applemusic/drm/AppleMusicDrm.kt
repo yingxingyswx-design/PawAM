@@ -61,10 +61,30 @@ object AppleMusicDrm {
             uuid: UUID,
             request: androidx.media3.exoplayer.drm.ExoMediaDrm.ProvisionRequest,
         ): androidx.media3.exoplayer.drm.MediaDrmCallback.Response {
-            // Apple hands out a device certificate (widevine-cert-url) instead of using the
-            // standard provisioning round trip, so an empty response is the correct answer here.
-            Log.d(LOG_TAG, "Provision request ignored (Apple uses its own certificate)")
-            return androidx.media3.exoplayer.drm.MediaDrmCallback.Response(ByteArray(0))
+            // The CDM asks for provisioning when this app has no provisioned Widevine
+            // certificate yet. Apple only supplies a certificate bundle for its own flow, so the
+            // standard Widevine provisioning service is used once; the resulting certificate is
+            // cached by the CDM and later licence requests go to Apple.
+            val body = request.data
+
+            val httpRequest = Request.Builder()
+                .url(request.defaultUrl)
+                .post(body.toRequestBody("application/octet-stream".toMediaType()))
+                .build()
+
+            Log.d(LOG_TAG, "Provisioning via ${request.defaultUrl}")
+
+            val (code, payload) = runCatching {
+                httpClient.newCall(httpRequest).execute().use { it.code to it.body?.bytes() }
+            }.getOrNull() ?: throw IllegalStateException("Provisioning request failed")
+
+            Log.d(LOG_TAG, "Provisioning HTTP $code (${payload?.size ?: 0} bytes)")
+
+            if (code != 200 || payload == null || payload.isEmpty()) {
+                throw IllegalStateException("Provisioning rejected: HTTP $code")
+            }
+
+            return androidx.media3.exoplayer.drm.MediaDrmCallback.Response(payload)
         }
 
         override fun executeKeyRequest(

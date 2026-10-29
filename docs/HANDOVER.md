@@ -225,3 +225,18 @@ provisioning 服务，只提供 `widevine-cert-url`。当前实现返回空响�
 
 注意：**不要**再把清单重定向到 `data:` URI —— 分片是相对路径，改 base 会导致
 `Source error`。必须用 `ManifestRewritingDataSource` 原地改写、保留原始 URL（已实现）。
+
+#### 根因确认（第 21 轮）
+
+provisioning 请求发往 `https://www.googleapis.com/certificateprovisioning/v1/devicecertificates/create`，
+但该域名在当前网络**不可达**：
+
+```
+curl --max-time 20 https://www.googleapis.com/...   -> 000（连接失败）
+adb shell ping -c 2 www.googleapis.com              -> 100% packet loss
+```
+
+因此表现为：DRM 会话停在 `BUFFERING`，日志只有 `Provisioning via ...`，之后既无成功也无失败。
+
+**可行路径**：在手机上开启 VPN 后播放一次，让 CDM 完成一次 provisioning（证书会被缓存），
+之后再验证是否无需 VPN 也能播放。这是外部网络条件问题，不是代码缺陷。
