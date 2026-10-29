@@ -51,6 +51,10 @@ class AppleMusicPlayback(
         val flavor: String?,
         val isEncrypted: Boolean,
         val isHls: Boolean,
+        /** Apple's licence endpoint for this track (`hls-key-server-url`). */
+        val licenseUrl: String? = null,
+        /** Original `#EXT-X-KEY` data URI, echoed verbatim in the licence request. */
+        val keyUri: String? = null,
     )
 
     /**
@@ -124,6 +128,13 @@ class AppleMusicPlayback(
             }
         }.onFailure { Log.w(LOG_TAG, "lease introspection failed", it) }
 
+        val songObject = runCatching {
+            JSONObject(payload).optJSONArray("songList")?.optJSONObject(0)
+        }.getOrNull()
+
+        val licenseUrl = songObject?.optString("hls-key-server-url")
+            ?.takeIf { it.isNotBlank() }
+
         val assets = runCatching {
             JSONObject(payload)
                 .optJSONArray("songList")
@@ -173,7 +184,20 @@ class AppleMusicPlayback(
         // Full manifest: the KEY line and any licence hints live here.
         Log.d(LOG_TAG, "MANIFEST: ${manifest?.take(3000)?.replace('\n', '|')}")
 
-        Lease(url = url, flavor = flavor, isEncrypted = isEncrypted, isHls = isHls)
+        val keyUri = manifest?.let { body ->
+            body.lineSequence()
+                .firstOrNull { it.startsWith("#EXT-X-KEY") }
+                ?.let { org.lineageos.twelve.datasources.applemusic.drm.HlsManifestRewriter.extractUri(it) }
+        }
+
+        Lease(
+            url = url,
+            flavor = flavor,
+            isEncrypted = isEncrypted,
+            isHls = isHls,
+            licenseUrl = licenseUrl,
+            keyUri = keyUri,
+        )
     }
 
     /**

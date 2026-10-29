@@ -30,6 +30,7 @@ import org.lineageos.twelve.datasources.applemusic.AppleMusicResult
 import org.lineageos.twelve.datasources.applemusic.AppleMusicTokenProvider
 import org.lineageos.twelve.datasources.applemusic.AppleMusicUri
 import org.lineageos.twelve.datasources.applemusic.TtmlParser
+import org.lineageos.twelve.datasources.applemusic.drm.AppleMusicStreamRegistry
 import org.lineageos.twelve.datasources.applemusic.toAlbum
 import org.lineageos.twelve.datasources.applemusic.toArtist
 import org.lineageos.twelve.datasources.applemusic.toAudio
@@ -399,13 +400,42 @@ class AppleMusicDataSource(
                 is AppleMusicResult.Success -> {
                     val audio = result.data.toAudioModel(instance.providerId, parsed.storefront)
 
-                    if (audio != null) {
-                        // TEMPORARY diagnostics: fetch the playback lease so the full response and
-                        // manifest can be inspected. Does not alter playbackUri.
-                        instance.playback.lease(parsed.id)
+                    if (audio == null) {
+                        return@request AppleMusicResult.NotFound
+                    }
+
+                    // Resolve a full-length lease at play time. When the stream is encrypted the
+                    // licence context is registered against the manifest URL, which is what the
+                    // DRM callback later looks up; unencrypted previews need none of this.
+                    val lease = instance.playback.lease(parsed.id)
+
+                    if (lease == null || !lease.isHls) {
                         AppleMusicResult.Success(audio)
+                    } else if (!lease.isEncrypted) {
+                        AppleMusicResult.Success(
+                            audio.copy(
+                                playbackUri = lease.url.toUri(),
+                                mimeType = "application/x-mpegURL",
+                            )
+                        )
                     } else {
-                        AppleMusicResult.NotFound
+                        AppleMusicStreamRegistry.register(
+                            lease.url,
+                            AppleMusicStreamRegistry.License(
+                                licenseUrl = lease.licenseUrl.orEmpty(),
+                                keyUri = lease.keyUri.orEmpty(),
+                                adamId = parsed.id,
+                                developerToken = instance.credentials.developerToken,
+                                musicUserToken = instance.credentials.musicUserToken,
+                            ),
+                        )
+
+                        AppleMusicResult.Success(
+                            audio.copy(
+                                playbackUri = lease.url.toUri(),
+                                mimeType = "application/x-mpegURL",
+                            )
+                        )
                     }
                 }
 

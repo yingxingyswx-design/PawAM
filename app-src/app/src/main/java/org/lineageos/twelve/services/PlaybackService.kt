@@ -447,8 +447,24 @@ class PlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        // Apple Music full tracks are cbcs-encrypted HLS. Two hooks are required and both are
+        // keyed off the stream URL: the manifest must be rewritten to CENC before Media3 parses
+        // it, and the Widevine licence must be fetched with Apple's own request format.
+        // Local and NetEase items are unaffected — the resolver passes them straight through.
+        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+            org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
+                .dataSourceFactory(httpDataSourceFactory)
+        ).setDrmSessionManagerProvider(
+            org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
+                .drmSessionManagerProvider()
+        )
+
         player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setHandleAudioBecomingNoisy(true)
             .setRenderersFactory(
                 TwelveRenderersFactory(

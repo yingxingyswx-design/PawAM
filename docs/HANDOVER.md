@@ -89,7 +89,7 @@
 3. 检查是否存在多个 MediaSession 实例（`dumpsys media_session` 曾显示 3 个 session），确认控制器连的是我们那一个。
 4. 对比本地曲库播放是否同样停在 STOPPED：若本地正常，问题在在线数据源；若本地也异常，问题在播放服务装配。
 
-### 3.2 Apple Music 全曲播放 —— **许可端点已定位，待实现**
+### 3.2 Apple Music 全曲播放 —— **链路已打通到 DRM 会话，卡在 Widevine provisioning**
 
 **已查明（真机实测，不再是猜测）**：`webPlayback` 响应里直接带有许可相关字段：
 
@@ -201,3 +201,27 @@ app-src/app/src/main/java/org/lineageos/twelve/
   一律加 `-Encoding utf8`，或直接用编辑器工具。详见 `docs/WINDOWS_ENCODING.md`。
 - `android.net.Uri` 在纯 JVM 单测里是桩实现，涉及它的测试要移除或用 Robolectric。
 - Kotlin 块注释可嵌套：注释里写 `/v1/me/*` 会开启一个嵌套注释，导致「Unclosed comment」。
+
+#### 当前进度（真机）
+
+已完成并验证：
+- 清单重写生效：`AppleMusicManifest: Rewrote manifest in place: https://aod-ssl.itunes.apple.com/...m3u8`
+- DRM 会话建立：Widevine CDM 被调用，日志出现 `cdm_engine.cpp ... level = L1`
+- 许可端点与请求格式确定（见上）
+
+**当前阻塞**：
+```
+DefaultDrmSession: DRM session error
+  java.lang.IllegalArgumentException: Failed to handle provision response: BAD_VALUE
+```
+Widevine 该设备需要 **provisioning**（`MediaDrm.getProvisionRequest`），而 Apple 不提供
+provisioning 服务，只提供 `widevine-cert-url`。当前实现返回空响应，CDM 判为 BAD_VALUE。
+
+**下一步可选方案**：
+1. 用标准 Widevine provisioning 服务完成一次 provision（设备 L1，通常可成功），
+   再走 Apple 的许可端点。
+2. 检查是否可通过 `MediaDrm` 属性跳过 provisioning（不同 OEM 行为不一致）。
+3. 参考浏览器行为：Chrome 会先用内置 provisioning，再请求 Apple 许可。
+
+注意：**不要**再把清单重定向到 `data:` URI —— 分片是相对路径，改 base 会导致
+`Source error`。必须用 `ManifestRewritingDataSource` 原地改写、保留原始 URL（已实现）。
