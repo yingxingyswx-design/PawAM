@@ -38,7 +38,7 @@ import org.lineageos.twelve.ui.recyclerview.SimpleListAdapter
 import org.lineageos.twelve.viewmodels.LyricsViewModel
 import org.lineageos.twelve.viewmodels.NowPlayingViewModel
 
-typealias LineToState = Pair<Lyrics.Line, NowPlayingViewModel.LyricsLineState>
+typealias LineToState = Triple<Lyrics.Line, NowPlayingViewModel.LyricsLineState, Long?>
 
 /**
  * Show lyrics of currently playing audio.
@@ -62,9 +62,18 @@ class LyricsFragment : Fragment(R.layout.fragment_lyrics) {
             { layoutInflater.inflate(R.layout.lyrics_line, null, false) as TextView }
         ) {
             override fun ViewHolder.onBindView(item: LineToState) {
-                val (line, lineState) = item
+                val (line, lineState, positionMs) = item
 
-                view.text = line.text
+                // Lines carrying per-word timing are shaded up to the current position, so the
+                // lyrics advance syllable by syllable instead of jumping a whole line at a time.
+                // Lines without timing fall back to plain text and rely on the line state only.
+                val words = line.words
+                view.text = if (words.isNullOrEmpty() || lineState != NowPlayingViewModel.LyricsLineState.ACTIVE) {
+                    line.text
+                } else {
+                    buildWordShadedText(line.text, words, positionMs ?: 0L)
+                }
+
                 view.isSelected = lineState == NowPlayingViewModel.LyricsLineState.ACTIVE
                 view.isActivated = lineState != NowPlayingViewModel.LyricsLineState.PAST
 
@@ -87,6 +96,56 @@ class LyricsFragment : Fragment(R.layout.fragment_lyrics) {
         }
     }
 
+    /**
+     * Build the active line's text with the already-sung syllables tinted.
+     *
+     * Shading is computed by clipping the current position against each word's own time range, so
+     * a word lights up progressively rather than in one step. Words without timing are skipped by
+     * the caller.
+     */
+    private fun buildWordShadedText(
+        text: String,
+        words: List<Lyrics.Word>,
+        positionMs: Long,
+    ): CharSequence {
+        val shaded = android.text.SpannableStringBuilder()
+        val sungColor = com.google.android.material.color.MaterialColors.getColor(
+            requireView(),
+            androidx.appcompat.R.attr.colorPrimary,
+        )
+
+        for (word in words) {
+            val start = shaded.length
+            shaded.append(word.text)
+            val end = shaded.length
+            if (end <= start) {
+                continue
+            }
+
+            val sungEnd = when {
+                positionMs >= word.durationMs.last -> end
+                positionMs <= word.durationMs.first -> start
+                else -> {
+                    val span = (word.durationMs.last - word.durationMs.first).coerceAtLeast(1L)
+                    val fraction = (positionMs - word.durationMs.first).toFloat() / span
+                    start + ((end - start) * fraction).toInt()
+                }
+            }
+
+            if (sungEnd > start) {
+                shaded.setSpan(
+                    android.text.style.ForegroundColorSpan(sungColor),
+                    start,
+                    sungEnd,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+        }
+
+        // Keep the original text when word concatenation drifts (defensive: a malformed document
+        // must not render different lyrics than the plain text).
+        return if (shaded.toString().trim() == text) shaded else text
+    }
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -222,7 +281,11 @@ class LyricsFragment : Fragment(R.layout.fragment_lyrics) {
             override fun areContentsTheSame(
                 oldItem: LineToState,
                 newItem: LineToState
-            ) = oldItem.second == newItem.second
+            ) = oldItem.second == newItem.second &&
+                // Word shading must advance within an active line, so the position has to take
+                // part in the comparison. Quantising keeps rebinds to a few per second instead of
+                // one per playback tick.
+                oldItem.third?.div(100L) == newItem.third?.div(100L)
         }
     }
 }

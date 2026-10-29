@@ -375,7 +375,9 @@ open class NowPlayingViewModel(application: Application) : TwelveViewModel(appli
                         currentIndex = i
                     }
 
-                    line to lyricsLineState
+                    // The current position travels with each line so word-level rendering can
+                    // shade the syllables already sung instead of flicking whole lines at once.
+                    Triple(line, lyricsLineState, durationCurrentPositionMs.second)
                 }
 
                 FlowResult.Success(linesWithState to currentIndex)
