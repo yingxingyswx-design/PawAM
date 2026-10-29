@@ -541,8 +541,12 @@ class AppleMusicDataSource(
             when (val result = instance.client.playlist(parsed.id, parsed.storefront)) {
                 is AppleMusicResult.Success -> {
                     val (playlist, tracks) = result.data
+                    // Library playlist tracks carry no preview URL, so `playbackUri` is null for
+                    // most of them. `Audio` documents null as "cannot be played", and the session
+                    // resolves `applemusic://` to a real stream, so the provider URI is used as the
+                    // playback target instead of dropping every row.
                     val audios = tracks.mapNotNull {
-                        it.toAudioModel(instance.providerId, parsed.storefront)
+                        it.toMedia3AudioModel(instance.providerId, parsed.storefront)
                     }
 
                     AppleMusicResult.Success(
@@ -714,6 +718,17 @@ internal fun AppleMusicArtist.toArtistModel(providerId: Long, storefront: String
     name = name,
 )
 
+/**
+ * Same as [toAudioModel], but keeps the entry playable when Apple provides no preview URL.
+ *
+ * Library playlist tracks usually have no preview, which would leave `playbackUri` null and mark
+ * the row unplayable. Queues built from a playlist use this variant so the row can be started; the
+ * session then resolves `applemusic://` into a signed stream and a Widevine licence.
+ */
+internal fun AppleMusicAudio.toMedia3AudioModel(providerId: Long, storefront: String) =
+    toAudioModel(providerId, storefront)?.let { audio ->
+        if (audio.playbackUri != null) audio else audio.copy(playbackUri = audio.uri)
+    }
 internal fun AppleMusicAudio.toAudioModel(providerId: Long, storefront: String): Audio? {
     val id = ids.catalogId ?: ids.libraryId ?: return null
 
@@ -724,11 +739,9 @@ internal fun AppleMusicAudio.toAudioModel(providerId: Long, storefront: String):
         thumbnail = artworkUrl?.let {
             Thumbnail.Builder().setUri(it.toUri()).setType(Thumbnail.Type.FRONT_COVER).build()
         },
-        // Library playlist tracks carry no preview URL. `Audio.toMedia3MediaItem` marks an item
-        // with a null playbackUri as unplayable, so such rows could not be started from a playlist
-        // at all. Falling back to the provider URI keeps the item playable: the session resolves
-        // `applemusic://` to a real stream (and licence) when the track is actually started.
-        playbackUri = previewUrl?.toUri() ?: audioUri,
+        // Previews only: see the class documentation. `Audio.toMedia3MediaItem` treats a null
+        // playbackUri as "cannot be played", so callers that build a queue must drop such entries.
+        playbackUri = previewUrl?.toUri(),
         mimeType = "audio/mp4",
         title = title,
         type = Audio.Type.MUSIC,

@@ -5,6 +5,9 @@
 
 package org.lineageos.twelve.services
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import android.content.Context
 import android.net.Uri
 import android.util.Log
@@ -257,24 +260,29 @@ class MediaRepositoryTree(
      * Given a list of media items, gets an equivalent list of items that can be passed to the
      * player. This should be used with onAddMediaItems and onSetMediaItems.
      */
-    suspend fun resolveMediaItems(mediaItems: List<MediaItem>) = buildList {
-        mediaItems.forEach { item ->
-            val searchQuery = item.requestMetadata.searchQuery
-            when {
-                searchQuery != null -> addAll(search(searchQuery))
+    suspend fun resolveMediaItems(mediaItems: List<MediaItem>): List<MediaItem> = coroutineScope {
+        // Resolve concurrently: a playlist can hold a hundred tracks and every online item costs a
+        // network round trip. Resolving them one after another made a playlist take minutes to
+        // start, which looks exactly like "tapping a playlist row does nothing".
+        val resolved = mediaItems.map { item ->
+            async {
+                val searchQuery = item.requestMetadata.searchQuery
+                when {
+                    searchQuery != null -> search(searchQuery)
 
-                // Apple Music stream URLs are signed and short-lived, so a URL captured when an
-                // album was listed is often already expired by the time the user presses play —
-                // which surfaces as "the song played once, then plays silently". Re-resolving the
-                // item asks the data source for a fresh URL instead of reusing the stale one.
-                item.localConfiguration?.uri != null &&
-                    !item.mediaId.isOnlineStream() -> add(item)
+                    // Apple Music stream URLs are signed and short-lived, so a URL captured when an
+                    // album was listed is often already expired by the time the user presses play —
+                    // which surfaces as "the song played once, then plays silently". Re-resolving
+                    // the item asks the data source for a fresh URL instead of reusing the stale one.
+                    item.localConfiguration?.uri != null &&
+                        !item.mediaId.isOnlineStream() -> listOf(item)
 
-                else -> getItem(item.mediaId)?.let { mediaItem ->
-                    add(mediaItem)
+                    else -> listOfNotNull(getItem(item.mediaId))
                 }
             }
-        }
+        }.awaitAll()
+
+        resolved.flatten()
     }
 
     /**
