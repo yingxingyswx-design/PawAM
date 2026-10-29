@@ -1,3 +1,43 @@
+---
+
+## 0. 速览（最新状态）
+
+| 功能 | 状态 |
+|---|---|
+| 工程独立构建 / 与系统版 Twelve 共存 | ✅ `assembleDebug`，39 个单测，34.1 MB APK |
+| 本地音乐播放 / 暂停重播 | ✅ 真机验证 |
+| 网易云登录 / 歌单 / 专辑 / 每日推荐 / 歌单详情 | ✅ 真机验证 |
+| 网易云播放 / 暂停重播 | ✅ 真机验证 |
+| Apple Music 登录 / 开发者令牌 | ✅ token 246 字符，dev token 268 字符 |
+| Apple Music 资料库 / 专辑详情 | ✅ 真机渲染出真实数据 |
+| Apple Music 歌词（TTML 逐字） | ✅ 接口 + 解析 + 39 个测试（界面按需求已撤除） |
+| Apple Music 播放 | ⚠️ 仅 30 秒试听 |
+| Apple Music 全曲 | ❌ 卡在 Widevine provisioning |
+
+### 唯一未解问题：Apple Music 全曲播放
+
+已完成：播放授权、许可端点与请求格式、清单重写（cbcs→CENC+pssh）、DRM 会话装配。
+**阻塞点：Widevine provisioning。** 结论与证据见 3.2 与 3.2b。
+
+已排除方案：
+- Google 证书服务：JSON 编码正确但返回 `Invalid Value`——其 API key 绑定官方应用签名，
+  第三方客户端不可用（5 种编码一次性实测，见 3.2b 表格）。
+- Apple `widevine-cert-url`：端点可用（200 + protobuf），但 CDM 解析时报
+  `ExtractAndDecodeSignedMessage: Cannot locate start substring`，响应封装格式未定。
+
+**下一步最有价值的动作**：确定 CDM 对 provisioning 响应的确切期望格式。
+可考虑：查阅 Widevine `certificate_provisioning.cpp` 的实现说明；
+或用一个已授权的官方类应用在同一设备上抓一次 provisioning 成功交互作为对照样本。
+
+### 已知的重要教训（避免重复踩坑）
+
+1. 播放器数据源必须用 `DefaultDataSource`，不能用 `DefaultHttpDataSource`——
+   后者无法打开 `content://`，会让**本地播放一起失效**。
+2. ExoPlayer 会为队列中每个条目创建 MediaSource，任何一个 URI 为 null 都会抛 NPE
+   并让整个队列无法播放。歌单必须过滤掉不可播曲目。
+3. 不要把 HLS 清单重定向到 `data:` URI：分片是相对路径，base 一变就 `Source error`。
+4. adb 用 `input tap` 猜坐标极不可靠；应先用 `uiautomator dump` 取 bounds 再点
+   （`scripts/drive-playback.ps1` 是可用范例）。
 # PawAM 交接文档
 
 最后更新：2026-10-30，HEAD = `c839cda` + 本轮验证
