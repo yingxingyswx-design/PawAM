@@ -124,8 +124,11 @@ abstract class TwelveViewModel(application: Application) : AndroidViewModel(appl
             // has to be passed explicitly.
             val startIndex = PlaybackStartPosition.indexOf(position, audios.size)
 
+            // `setMediaItems` already installs and prepares the queue. An explicit `prepare()`
+            // immediately after it raced the (cross-process) controller command and made the
+            // session re-install the playlist with startIndex 0 — which is why the tapped track
+            // was never the one that started.
             setMediaItems(audios.map { it.toMedia3MediaItem(resources) }, startIndex, 0L)
-            prepare()
             play()
         }
     }

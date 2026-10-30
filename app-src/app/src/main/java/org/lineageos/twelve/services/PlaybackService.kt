@@ -334,6 +334,13 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
         ) = lifecycleScope.future {
+            // Diagnostics: this callback carries no start index, so a queue installed through it
+            // always begins at its first item. Seeing it fire is what distinguishes "the tapped
+            // track was never selected" from "it was selected but fails to play".
+            android.util.Log.d(
+                "PawAMPlayback",
+                "onAddMediaItems ${mediaItems.size} item(s), firstId=${mediaItems.firstOrNull()?.mediaId}",
+            )
             mediaRepositoryTree.resolveMediaItems(mediaItems)
         }
 
@@ -351,13 +358,10 @@ class PlaybackService : MediaLibraryService() {
             )
 
             // Show progress immediately: resolution can take a second or more, and without a
-            // buffering state the UI looks frozen while the queue is being prepared.
-            player?.let {
-                it.playWhenReady = true
-                if (startIndex in resolvedRange(mediaItems.size)) {
-                    it.seekTo(startIndex, startPositionMs)
-                }
-            }
+            // buffering state the UI looks frozen while the queue is being prepared. Seeking is
+            // left to the returned MediaItemsWithStartPosition — the playlist is still the old one
+            // at this point, so a seek here would be applied to the replaced queue and lost.
+            player?.playWhenReady = true
 
             val startedAt = android.os.SystemClock.elapsedRealtime()
 
