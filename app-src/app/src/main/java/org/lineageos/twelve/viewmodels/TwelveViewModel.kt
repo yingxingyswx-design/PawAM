@@ -122,7 +122,7 @@ abstract class TwelveViewModel(application: Application) : AndroidViewModel(appl
             // queue always began at its first item and the tapped row was then "seeked" to by
             // position — the track the user picked was never the one that played. The start index
             // has to be passed explicitly.
-            val startIndex = position.coerceIn(0, (audios.size - 1).coerceAtLeast(0))
+            val startIndex = PlaybackStartPosition.indexOf(position, audios.size)
 
             setMediaItems(audios.map { it.toMedia3MediaItem(resources) }, startIndex, 0L)
             prepare()
