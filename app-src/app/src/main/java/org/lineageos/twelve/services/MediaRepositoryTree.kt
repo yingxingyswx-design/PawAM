@@ -261,40 +261,71 @@ class MediaRepositoryTree(
     /**
      * Given a list of media items, gets an equivalent list of items that can be passed to the
      * player. This should be used with onAddMediaItems and onSetMediaItems.
+     *
+     * Only [startIndex] is resolved eagerly. Every other entry keeps its unresolved state and is
+     * resolved later by [resolveLazily]; resolving the whole playlist up front meant a hundred
+     * network round trips before the first sound, which the user experiences as "tapping a
+     * playlist row does nothing".
      */
-    suspend fun resolveMediaItems(mediaItems: List<MediaItem>): List<MediaItem> = coroutineScope {
-        // Resolution performs network work per online track: a playlist can hold a hundred of
-        // them. Resolving sequentially made a playlist take minutes before the first sound, which
-        // the user perceives as "tapping a playlist row does nothing". Resolving all at once risks
-        // rate limiting, so concurrency is bounded and a single failure only affects its own item.
-        val permits = Semaphore(RESOLVE_CONCURRENCY)
+    suspend fun resolveMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int = 0,
+    ): List<MediaItem> {
+        if (mediaItems.isEmpty()) {
+            return mediaItems
+        }
 
-        val resolved = mediaItems.map { item ->
-            async {
-                permits.withPermit {
-                    val searchQuery = item.requestMetadata.searchQuery
-                    when {
-                        searchQuery != null -> search(searchQuery)
+        val eagerIndex = startIndex.takeIf { it in mediaItems.indices } ?: 0
 
-                        // Apple Music stream URLs are signed and short-lived, so a URL captured
-                        // when an album was listed is often already expired by the time the user
-                        // presses play — which surfaces as "the song played once, then plays
-                        // silently". Re-resolving asks the data source for a fresh URL.
-                        item.localConfiguration?.uri != null &&
-                            !item.mediaId.isOnlineStream() -> listOf(item)
-
-                        else -> runCatching { getItem(item.mediaId) }
-                            .onFailure { Log.w(TAG, "Could not resolve ${item.mediaId}", it) }
-                            // Keeping the original item keeps the queue intact; the player will
-                            // report a source error for it instead of the queue dying silently.
-                            .getOrNull()?.let { listOf(it) } ?: listOf(item)
-                    }
-                }
+        return mediaItems.mapIndexed { index, item ->
+            // Only the entry about to play is fetched; the rest are resolved when playback reaches
+            // them, so starting a queue costs one round trip instead of one per track.
+            if (index == eagerIndex) {
+                resolveOne(item).firstOrNull() ?: item
+            } else {
+                item
             }
-        }.awaitAll()
-
-        resolved.flatten()
+        }
     }
+
+    /**
+     * Resolve a single item on demand.
+     *
+     * Exposed so the player can refresh one entry (for example when it is about to be played)
+     * without paying for the rest of the queue.
+     */
+    suspend fun resolveOne(mediaItem: MediaItem): List<MediaItem> {
+        val searchQuery = mediaItem.requestMetadata.searchQuery
+        return when {
+            searchQuery != null -> search(searchQuery)
+
+            // Apple Music stream URLs are signed and short-lived, so a URL captured when the album
+            // was listed is often expired by the time the user presses play.
+            mediaItem.localConfiguration?.uri != null &&
+                !mediaItem.mediaId.isOnlineStream() -> listOf(mediaItem)
+
+            else -> runCatching { getItem(mediaItem.mediaId) }
+                .onFailure { Log.w(TAG, "Could not resolve ${mediaItem.mediaId}", it) }
+                .getOrNull()?.let { resolved ->
+                    // An item that still has no stream URI cannot be opened by the HTTP data
+                    // source; dropping it lets the player move on instead of failing on a URL
+                    // that does not exist.
+                    if (resolved.localConfiguration?.uri == null) {
+                        Log.w(TAG, "Resolved ${mediaItem.mediaId} has no URI; dropping it")
+                        emptyList()
+                    } else {
+                        listOf(resolved)
+                    }
+                } ?: emptyList()
+        }
+    }
+
+    /**
+     * Whether [mediaItem] still needs a network round trip before it can be played.
+     */
+    fun needsResolution(mediaItem: MediaItem): Boolean =
+        mediaItem.requestMetadata.searchQuery == null &&
+            (mediaItem.localConfiguration?.uri == null || mediaItem.mediaId.isOnlineStream())
 
     /**
      * Given a query, search for media items.
