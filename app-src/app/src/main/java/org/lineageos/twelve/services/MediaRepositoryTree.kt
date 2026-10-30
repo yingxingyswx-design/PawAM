@@ -5,6 +5,8 @@
 
 package org.lineageos.twelve.services
 
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -261,23 +263,32 @@ class MediaRepositoryTree(
      * player. This should be used with onAddMediaItems and onSetMediaItems.
      */
     suspend fun resolveMediaItems(mediaItems: List<MediaItem>): List<MediaItem> = coroutineScope {
-        // Resolve concurrently: a playlist can hold a hundred tracks and every online item costs a
-        // network round trip. Resolving them one after another made a playlist take minutes to
-        // start, which looks exactly like "tapping a playlist row does nothing".
+        // Resolution performs network work per online track: a playlist can hold a hundred of
+        // them. Resolving sequentially made a playlist take minutes before the first sound, which
+        // the user perceives as "tapping a playlist row does nothing". Resolving all at once risks
+        // rate limiting, so concurrency is bounded and a single failure only affects its own item.
+        val permits = Semaphore(RESOLVE_CONCURRENCY)
+
         val resolved = mediaItems.map { item ->
             async {
-                val searchQuery = item.requestMetadata.searchQuery
-                when {
-                    searchQuery != null -> search(searchQuery)
+                permits.withPermit {
+                    val searchQuery = item.requestMetadata.searchQuery
+                    when {
+                        searchQuery != null -> search(searchQuery)
 
-                    // Apple Music stream URLs are signed and short-lived, so a URL captured when an
-                    // album was listed is often already expired by the time the user presses play —
-                    // which surfaces as "the song played once, then plays silently". Re-resolving
-                    // the item asks the data source for a fresh URL instead of reusing the stale one.
-                    item.localConfiguration?.uri != null &&
-                        !item.mediaId.isOnlineStream() -> listOf(item)
+                        // Apple Music stream URLs are signed and short-lived, so a URL captured
+                        // when an album was listed is often already expired by the time the user
+                        // presses play — which surfaces as "the song played once, then plays
+                        // silently". Re-resolving asks the data source for a fresh URL.
+                        item.localConfiguration?.uri != null &&
+                            !item.mediaId.isOnlineStream() -> listOf(item)
 
-                    else -> listOfNotNull(getItem(item.mediaId))
+                        else -> runCatching { getItem(item.mediaId) }
+                            .onFailure { Log.w(TAG, "Could not resolve ${item.mediaId}", it) }
+                            // Keeping the original item keeps the queue intact; the player will
+                            // report a source error for it instead of the queue dying silently.
+                            .getOrNull()?.let { listOf(it) } ?: listOf(item)
+                    }
                 }
             }
         }.awaitAll()
@@ -360,6 +371,11 @@ class MediaRepositoryTree(
     }
 
     companion object {
+        private const val TAG = "PawAMResolve"
+
+        /** Bounded so a large playlist does not flood the provider with parallel requests. */
+        private const val RESOLVE_CONCURRENCY = 6
+
         private val LOG_TAG = MediaRepositoryTree::class.simpleName!!
 
         // Root ID
