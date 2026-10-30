@@ -113,6 +113,11 @@ abstract class TwelveViewModel(application: Application) : AndroidViewModel(appl
     private val LOG_TAG = "PawAMViewModel"
 
     fun playAudio(audios: List<Audio>, position: Int) {
+        android.util.Log.d(
+            "PawAMViewModel",
+            "playAudio position=$position size=${audios.size} controller=${mediaController.value != null}",
+        )
+
         mediaController.value?.apply {
             // Initialize shuffle and repeat modes
             shuffleModeEnabled = sharedPreferences.shuffleModeEnabled
@@ -128,8 +133,22 @@ abstract class TwelveViewModel(application: Application) : AndroidViewModel(appl
             // immediately after it raced the (cross-process) controller command and made the
             // session re-install the playlist with startIndex 0 — which is why the tapped track
             // was never the one that started.
-            setMediaItems(audios.map { it.toMedia3MediaItem(resources) }, startIndex, 0L)
-            play()
+            // The queue must be explicitly started: `setMediaItems` only installs it and leaves the
+            // player idle, so without these calls nothing audible happens. They are issued in one
+            // batch (the controller coalesces them) so the start index is not lost in between.
+            runCatching {
+                setMediaItems(audios.map { it.toMedia3MediaItem(resources) }, startIndex, 0L)
+                prepare()
+                play()
+            }.onFailure {
+                android.util.Log.e("PawAMViewModel", "setMediaItems/prepare/play failed", it)
+            }
+
+            android.util.Log.d(
+                "PawAMViewModel",
+                "after setMediaItems: count=$mediaItemCount index=$currentMediaItemIndex " +
+                    "state=$playbackState commands=${availableCommands.size()}",
+            )
         }
     }
     fun addToQueue(audios: List<Audio>) {

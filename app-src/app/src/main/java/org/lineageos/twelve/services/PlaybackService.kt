@@ -620,24 +620,10 @@ class PlaybackService : MediaLibraryService() {
             .experimentalSetDynamicSchedulingEnabled(true)
             .build()
 
-        // A skip can leave the player idle: the queue has entries but nothing is prepared, so the
-        // session reports STOPPED and the skip appears to do nothing. If a queue is loaded and
-        // entries remain, keep it moving instead of staying silent.
-        player?.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                val current = player ?: return
-                if (playbackState != Player.STATE_IDLE || current.mediaItemCount == 0) {
-                    return
-                }
-
-                android.util.Log.w(
-                    "PawAMPlayback",
-                    "Player went idle with ${current.mediaItemCount} item(s); resuming",
-                )
-                current.prepare()
-                current.play()
-            }
-        })
+        // Every queue installation passes through STATE_IDLE, so reacting to that state meant this
+        // listener fired while `setMediaItems` was still being applied and re-prepared the queue
+        // from its first item — the tapped track was never the one that started. Genuinely idle
+        // sessions are handled where the queue is installed instead.
 
         // An entry whose stream URL is not resolved yet carries the placeholder `applemusic://`
         // URI, which the data source cannot open: the player raises a source error before any
