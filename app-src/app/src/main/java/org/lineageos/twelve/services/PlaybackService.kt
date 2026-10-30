@@ -635,9 +635,10 @@ class PlaybackService : MediaLibraryService() {
             }
         })
 
-        // Skipping can land on an entry whose stream URL is still being resolved. Resolve it on
-        // demand instead of letting the player fail and skip again: without this, going back to a
-        // previously played track re-resolved it and stuttered.
+        // An entry whose stream URL is not resolved yet carries the placeholder `applemusic://`
+        // URI, which the data source cannot open: the player raises a source error before any
+        // lazy resolution could run. Playback is therefore held until the entry is resolved, so a
+        // skip waits for the URL instead of failing and bouncing around the queue.
         player?.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (mediaItem == null) {
@@ -651,33 +652,73 @@ class PlaybackService : MediaLibraryService() {
 
                 val position = current.currentMediaItemIndex
                 lifecycleScope.launch {
+                    // Hold playback while the URL is fetched; resuming early would hit the
+                    // placeholder URI and turn a short wait into a source error.
+                    val wasPlaying = current.playWhenReady
+                    current.playWhenReady = false
+
                     val resolved = mediaRepositoryTree.resolveOne(mediaItem)
                         .firstOrNull { it.localConfiguration?.uri != null }
-                        ?: return@launch
 
-                    // Replacing while the item is current would restart it, so the player keeps
-                    // its position and simply reloads the source.
-                    val wasPlaying = current.playWhenReady
-                    current.replaceMediaItem(position, resolved)
-                    if (wasPlaying) {
-                        current.prepare()
-                        current.play()
+                    if (resolved == null) {
+                        Log.w("PawAMPlayback", "Item at $position could not be resolved")
+                        return@launch
                     }
 
-                    // Warm the new neighbourhood. Only the window around the queue's start was
-                    // ever resolved, so skipping past it landed on entries with no stream URL and
-                    // playback jumped back to the first track.
+                    // The user may have skipped again while this was in flight.
+                    if (current.currentMediaItemIndex != position) {
+                        return@launch
+                    }
+
+                    current.replaceMediaItem(position, resolved)
+                    current.prepare()
+                    current.playWhenReady = wasPlaying
+
+                    // Warm the new neighbourhood so further skips find a ready URL too.
                     warmNeighbours(position)
                 }
             }
         })
 
-        // A provider track can be unavailable (region-locked catalog item, removed release). One
-        // such item must not kill the whole queue, so a playback error skips to the next entry
-        // instead of surfacing as a stopped session. The last item still reports its error.
+        // A track can fail because its stream URL is not known yet: the queue is resolved lazily,
+        // so skipping onto an un-resolved entry used to raise an error, and blindly seeking to the
+        // next entry repeated the failure until the queue wrapped back to its first track — which
+        // is exactly what "skipping jumps to the first song" was. Resolve the failing entry in
+        // place and retry before giving up on it.
         player?.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 val current = player ?: return
+                val position = current.currentMediaItemIndex
+                val item = current.currentMediaItem
+
+                if (item != null && mediaRepositoryTree.needsResolution(item)) {
+                    Log.w(
+                        "PawAMPlayback",
+                        "Unresolved item at $position failed; resolving and retrying",
+                        error,
+                    )
+
+                    lifecycleScope.launch {
+                        val resolved = mediaRepositoryTree.resolveOne(item)
+                            .firstOrNull { it.localConfiguration?.uri != null }
+
+                        if (resolved == null) {
+                            Log.w("PawAMPlayback", "Item at $position could not be resolved")
+                            return@launch
+                        }
+
+                        // The user may have moved on while this was in flight.
+                        if (current.currentMediaItemIndex != position) {
+                            return@launch
+                        }
+
+                        current.replaceMediaItem(position, resolved)
+                        current.prepare()
+                        current.play()
+                    }
+                    return
+                }
+
                 if (current.hasNextMediaItem()) {
                     Log.w("PawAMPlayback", "Skipping unplayable item: ${error.errorCodeName}", error)
                     current.seekToNextMediaItem()
@@ -809,16 +850,16 @@ class PlaybackService : MediaLibraryService() {
     /**
      * Resolve the entries around [index] that still lack a stream URL.
      *
-     * Called whenever playback moves. Before this, only the window around where the queue started
-     * was ever resolved, so a skip past it landed on an entry with no URL — the player then failed
-     * and fell back to the first track of the playlist.
+     * `replaceMediaItem` resets playback of the queue, so this only ever touches entries that are
+     * neither current nor adjacent to the current one: patching a neighbour close to playback was
+     * observed to keep restarting the track that was about to play.
      */
     private fun warmNeighbours(index: Int) {
         lifecycleScope.launch {
             val current = player ?: return@launch
             val count = current.mediaItemCount
 
-            for (offset in 1..RESOLVE_LOOKAHEAD) {
+            for (offset in 2..RESOLVE_LOOKAHEAD) {
                 for (target in intArrayOf(index + offset, index - offset)) {
                     if (target !in 0 until count) {
                         continue
