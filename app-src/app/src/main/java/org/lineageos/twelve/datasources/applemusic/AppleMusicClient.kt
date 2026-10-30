@@ -48,10 +48,11 @@ sealed interface AppleMusicResult<out T> {
 /**
  * How long library metadata may be served from disk before it is fetched again.
  *
- * Library content changes when the user edits it, not on a timer, so a long window is acceptable
- * and it is what makes opening the library instant on a weak connection.
+ * Kept short on purpose: a longer window was tried and made the library show stale and empty
+ * listings (an empty or partial answer stayed cached for hours), which looks like the library
+ * having lost its contents. Ten minutes still makes repeated navigation instant.
  */
-private const val CACHE_MAX_AGE_SECONDS = 12 * 60 * 60
+private const val CACHE_MAX_AGE_SECONDS = 10 * 60
 
 class AppleMusicClient(
     private val tokenProvider: AppleMusicTokenProvider,

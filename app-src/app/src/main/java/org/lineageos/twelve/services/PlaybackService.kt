@@ -637,8 +637,19 @@ class PlaybackService : MediaLibraryService() {
 
                 val current = player ?: return
                 if (!mediaRepositoryTree.needsResolution(mediaItem)) {
+                    android.util.Log.d(
+                        "PawAMPlayback",
+                        "transition to ${mediaItem.mediaId}: already resolved, " +
+                            "index=${current.currentMediaItemIndex} playWhenReady=${current.playWhenReady}",
+                    )
                     return
                 }
+
+                android.util.Log.d(
+                    "PawAMPlayback",
+                    "transition to ${mediaItem.mediaId}: needs resolution, " +
+                        "index=${current.currentMediaItemIndex}",
+                )
 
                 val position = current.currentMediaItemIndex
                 lifecycleScope.launch {
