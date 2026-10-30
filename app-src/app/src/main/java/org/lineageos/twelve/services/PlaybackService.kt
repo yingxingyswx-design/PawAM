@@ -334,7 +334,17 @@ class PlaybackService : MediaLibraryService() {
             )
 
             val startedAt = android.os.SystemClock.elapsedRealtime()
-            val resolvedMediaItems = mediaRepositoryTree.resolveMediaItems(mediaItems)
+
+            // Resolution performs a network round trip per online track. If it fails, the whole
+            // queue used to be dropped without any exposed error, which the user experiences as
+            // "nothing happens when I tap a playlist row". Falling back to the unresolved items
+            // keeps playback possible and makes the failure visible in the log.
+            val resolvedMediaItems = runCatching {
+                mediaRepositoryTree.resolveMediaItems(mediaItems)
+            }.onFailure {
+                android.util.Log.e("PawAMPlayback", "resolveMediaItems failed", it)
+            }.getOrDefault(mediaItems)
+
             android.util.Log.d(
                 "PawAMPlayback",
                 "resolveMediaItems took ${android.os.SystemClock.elapsedRealtime() - startedAt}ms " +
