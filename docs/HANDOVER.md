@@ -383,3 +383,25 @@ CDM 始终报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`。
 
 - `AppleMusicClient.librarySearch` 走 `/me/library/search?types=library-albums,library-songs,library-artists`。
 - 切换前用的是目录搜索 `/catalog/<sf>/search`，会返回商店结果而非用户库内内容。
+
+### 点击曲目从选中项起播（易错点，勿回退）
+
+`Player.setMediaItems` 有两个容易混淆的重载，官方文档明确：
+
+```java
+// 布尔参数是 resetPosition：重置到「第一个 Window」的默认位置
+void setMediaItems(List<MediaItem> mediaItems, boolean resetPosition);
+
+// 这个才是「从第几首开始」
+void setMediaItems(List<MediaItem> mediaItems, int startIndex, long startPositionMs);
+```
+
+上游 Twelve 的 `TwelveViewModel.playAudio` 写的是
+`setMediaItems(items, true)` + `seekToDefaultPosition(position)`，
+后者设置的是「当前这首（第 0 首）的播放位置」，并非选择曲目，
+于是点击任意行都从第一首开始播。
+
+已改为 `setMediaItems(items, startIndex, 0L)` 并做越界收敛。
+**本地音乐与网易云同样受此问题影响**，不只 Apple Music。
+
+参考：https://raw.githubusercontent.com/androidx/media/main/libraries/common/src/main/java/androidx/media3/common/Player.java
