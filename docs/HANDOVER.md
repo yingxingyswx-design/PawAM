@@ -4,47 +4,67 @@
 
 | 功能 | 状态 |
 |---|---|
-| 工程独立构建 / 与系统版 Twelve 共存 | ✅ `assembleDebug`，39 个单测，34.1 MB APK |
+| 工程独立构建 / 与系统版 Twelve 共存 | ✅ `assembleDebug`，52 个单测，34 MB APK |
 | 本地音乐播放 / 暂停重播 | ✅ 真机验证 |
 | 网易云登录 / 歌单 / 专辑 / 每日推荐 / 歌单详情 | ✅ 真机验证 |
 | 网易云播放 / 暂停重播 | ✅ 真机验证 |
-| Apple Music 登录 / 开发者令牌 | ✅ token 246 字符，dev token 268 字符 |
-| Apple Music 资料库 / 专辑详情 | ✅ 真机渲染出真实数据 |
-| Apple Music 歌词（TTML 逐字） | ✅ 接口 + 解析 + 39 个测试（界面按需求已撤除） |
-| Apple Music 播放 | ⚠️ 仅 30 秒试听 |
-| Apple Music 全曲 | ❌ 卡在 Widevine provisioning |
+| Apple Music 登录 / 开发者令牌 | ✅ 自动从网页播放器抓取 |
+| Apple Music 资料库 / 专辑详情 / 播放列表详情 | ✅ 真机验证 |
+| Apple Music 歌词（TTML 逐字） | ✅ 接口与解析；界面按需求已撤除 |
+| **Apple Music 全曲播放** | ✅ **真机验证（突破 30 秒试听，播完整首）** |
+| Apple Music 暂停 / 恢复 / 切歌 | ✅ 真机验证 |
+| Apple Music 播放列表「点歌起播」 | ⚠️ 已定位并加固，**缺最终真机确认** |
 
-### 唯一未解问题：Apple Music 全曲播放
+### 全曲播放是怎么打通的（重要，勿回退）
 
-已完成：播放授权、许可端点与请求格式、清单重写（cbcs→CENC+pssh）、DRM 会话装配。
-**阻塞点：Widevine provisioning。** 结论与证据见 3.2 与 3.2b。
+三个真实缺陷，缺一不可：
 
-已排除方案：
-- Google 证书服务：JSON 编码正确但返回 `Invalid Value`——其 API key 绑定官方应用签名，
-  第三方客户端不可用（5 种编码一次性实测，见 3.2b 表格）。
-- Apple `widevine-cert-url`：端点可用（200 + protobuf），但 CDM 解析时报
-  `ExtractAndDecodeSignedMessage: Cannot locate start substring`，响应封装格式未定。
+1. **`ProvisionRequest.data` 已经是 URL-safe base64 文本**，不是二进制。
+   再 base64 一次会让 Google 证书服务返回无提示的 400。
+   必须转成标准 base64（`-`→`+`, `_`→`/`，补齐 padding）放进 JSON 的 `signed_request`。
+2. **许可交换要用「解析后的」开发者令牌**，不是配置里那个（通常为空），
+   否则报 `Missing developer token`。
+3. 证书服务优先用 CDM 自带的 `defaultUrl`（Google），Apple 的 `widevine-cert-url` 作回退。
 
-**下一步最有价值的动作**：确定 CDM 对 provisioning 响应的确切期望格式。
-可考虑：查阅 Widevine `certificate_provisioning.cpp` 的实现说明；
-或用一个已授权的官方类应用在同一设备上抓一次 provisioning 成功交互作为对照样本。
+代码位置：`datasources/applemusic/drm/`（`WidevineProvisioning`、`WidevinePssh`、
+`HlsManifestRewriter`、`WidevineLicenseRequest`、`ManifestRewritingDataSource`、`AppleMusicDrm`）。
+
+### 唯一未完成项：Apple Music 播放列表点歌起播
+
+已确证的事实链：
+
+```
+PawAMPlaylist: row clicked: position=0          ← 点击触发
+PawAMPlaylist: playPlaylist(0): state=Success   ← 列表数据 82 首、playbackUri 非空
+PawAMPlayback: onSetMediaItems received 82 item(s), startIndex=-1   ← 队列到达会话
+（缺失）PawAMPlayback: resolveMediaItems took ...ms
+```
+
+即：请求到了会话，但**队列解析阶段**没有走完。已做三层加固：
+
+1. 解析改为并发（`Semaphore(6)` 限流）；
+2. 单曲解析失败只保留原条目，不影响整批；
+3. `onSetMediaItems` 外层兜底：整批失败则退回未解析队列；
+4. 播放出错时自动跳到下一首。
+
+**下一步只需一条日志定性**：跑一次播放列表起播，看是否有
+`resolveMediaItems took <ms>ms`；若有则解析正常、问题在后面，若无则解析卡住或抛错。
 
 ### 已知的重要教训（避免重复踩坑）
 
 1. 播放器数据源必须用 `DefaultDataSource`，不能用 `DefaultHttpDataSource`——
    后者无法打开 `content://`，会让**本地播放一起失效**。
-2. ExoPlayer 会为队列中每个条目创建 MediaSource，任何一个 URI 为 null 都会抛 NPE
-   并让整个队列无法播放。歌单必须过滤掉不可播曲目。
+2. ExoPlayer 会为队列中每个条目创建 MediaSource，任何一个 URI 为 null 都会让整个队列无法播放。
 3. 不要把 HLS 清单重定向到 `data:` URI：分片是相对路径，base 一变就 `Source error`。
-4. adb 用 `input tap` 猜坐标极不可靠；应先用 `uiautomator dump` 取 bounds 再点
-   （`scripts/drive-playback.ps1` 是可用范例）。
-# PawAM 交接文档
-
-最后更新：2026-10-30，HEAD = `c839cda` + 本轮验证
-
-本文记录**当前真实状态**、已验证的证据，以及下一步该从哪里查起。计划不算证据，只有构建结果和真机日志算。
-
----
+4. `Audio.toMedia3MediaItem` 里 `isPlayable = playbackUri != null`：
+   `playbackUri` 为 null 的曲目会被标记为不可播放，点击毫无反应。
+5. **不要用 `dumpsys media_session | grep | head -1` 判断播放状态**：
+   系统里有多个会话，会抓到别的应用。可靠指标是日志
+   `MediaSessionService: onSessionPlaybackStateChanged: record=dev.pawam.twelve.dev/...`。
+6. adb 反复按返回键会把 App 退回桌面，之后所有点击都落在桌面，产生假信号。
+   驱动脚本必须先确认 `topResumedActivity` 仍是本应用。
+7. 点击要取 `clickable="true"` 节点的 bounds，而不是文本节点的 bounds。
+8. 设备断连时 adb 命令可能挂起数小时，跑设备命令要带超时。
 
 ## 1. 工程现状
 
