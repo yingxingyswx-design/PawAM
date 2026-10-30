@@ -404,7 +404,21 @@ class AppleMusicDataSource(
             ?: return flowOf(Result.Failure(Error.NOT_FOUND))
 
         return request(parsed.providerId) { instance ->
-            when (val result = instance.client.song(parsed.id)) {
+            // Library songs are addressed by `i.*` ids that the catalog and playback endpoints do
+            // not accept. Translating to the catalog id first is what lets those tracks play at
+            // all; without it they fail with no stream URL.
+            val catalogId = if (parsed.id.startsWith("i.")) {
+                when (val resolved = instance.client.catalogIdForLibrarySong(parsed.id)) {
+                    is AppleMusicResult.Success -> resolved.data
+                    is AppleMusicResult.Unauthorized -> return@request AppleMusicResult.Unauthorized
+                    is AppleMusicResult.NotFound -> return@request AppleMusicResult.NotFound
+                    is AppleMusicResult.Failed -> return@request resolved
+                }
+            } else {
+                parsed.id
+            }
+
+            when (val result = instance.client.song(catalogId)) {
                 is AppleMusicResult.Success -> {
                     val audio = result.data.toAudioModel(instance.providerId, parsed.storefront)
 
@@ -415,28 +429,25 @@ class AppleMusicDataSource(
                     // Resolve a full-length lease at play time. When the stream is encrypted the
                     // licence context is registered against the manifest URL, which is what the
                     // DRM callback later looks up; unencrypted previews need none of this.
-                    val lease = instance.playback.lease(parsed.id)
+                    val lease = instance.playback.lease(catalogId)
 
                     if (lease == null || !lease.isHls) {
                         AppleMusicResult.Success(audio)
-                    } else if (!lease.isEncrypted || !FULL_TRACK_PLAYBACK_ENABLED) {
-                        // Full-length playback needs a Widevine provisioning round trip that is
-                        // not solved yet (see docs/HANDOVER.md). Until it is, previews are used so
-                        // a track plays instead of failing with "Source error".
+                    } else if (!lease.isEncrypted) {
+                        // An unencrypted lease can be played without a DRM session.
                         AppleMusicResult.Success(
                             audio.copy(
                                 playbackUri = lease.url.toUri(),
                                 mimeType = "application/x-mpegURL",
                             )
                         )
-                        AppleMusicResult.Success(audio)
                     } else {
                         AppleMusicStreamRegistry.register(
                             lease.url,
                             AppleMusicStreamRegistry.License(
                                 licenseUrl = lease.licenseUrl.orEmpty(),
                                 keyUri = lease.keyUri.orEmpty(),
-                                adamId = parsed.id,
+                                adamId = catalogId,
                                 // The configured token is usually empty: PawAM obtains one by
                                 // scraping Apple's web player, so the resolved value must be used
                                 // or the licence exchange fails with "Missing developer token".

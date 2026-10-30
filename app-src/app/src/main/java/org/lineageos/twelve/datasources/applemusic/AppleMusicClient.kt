@@ -145,6 +145,35 @@ class AppleMusicClient(
     // User library
     // ---------------------------------------------------------------------
 
+    /**
+     * Resolve the catalog id for a library song.
+     *
+     * Library items are addressed by ids like `i.XyZ`, which the playback endpoints do not accept.
+     * Asking Apple for the item with `include=catalog` yields the catalog counterpart, whose id is
+     * what playback, licences and metadata lookups actually need.
+     */
+    suspend fun catalogIdForLibrarySong(libraryId: String): AppleMusicResult<String> =
+        userRequest { token, userToken ->
+            val url = url("me", "library", "songs", libraryId) {
+                addQueryParameter("include", "catalog")
+            } ?: return@userRequest AppleMusicResult.Failed()
+
+            val root = getJson(url, token, userToken)
+                ?: return@userRequest AppleMusicResult.Failed()
+            val resource = root.dataArray().firstOrNull()
+                ?: return@userRequest AppleMusicResult.NotFound
+
+            val catalogId = resource.optJSONObject("relationships")
+                ?.optJSONObject("catalog")
+                ?.optJSONArray("data")
+                ?.optJSONObject(0)
+                ?.optString("id")
+                ?.takeIf { it.isNotBlank() }
+
+            catalogId?.let { AppleMusicResult.Success(it) }
+                ?: AppleMusicResult.NotFound
+        }
+
     suspend fun libraryPlaylists(limit: Int = 100): AppleMusicResult<List<AppleMusicPlaylist>> =
         userRequest { token, userToken ->
             val url = url("me", "library", "playlists") {

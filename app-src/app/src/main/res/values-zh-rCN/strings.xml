@@ -18,6 +18,7 @@
     <string name="play_random_songs">随机播放歌曲</string>
     <string name="search_hint">搜索…</string>
     <string name="library_fragment_menu_albums">专辑</string>
+    <string name="library_fragment_search_hint">搜索库内专辑或歌曲</string>
     <string name="library_fragment_menu_artists">艺术家</string>
     <string name="library_fragment_menu_genres">流派</string>
     <string name="library_fragment_menu_playlists">播放列表</string>
