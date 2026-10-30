@@ -150,18 +150,43 @@ object AppleMusicUri {
     ): Uri = Uri.Builder()
         .scheme(SCHEME)
         .authority(AUTHORITY)
-        .appendPath(providerId.toString())
-        .appendPath(kind)
-        .appendPath(storefront.ifBlank { AppleMusicClient.DEFAULT_STOREFRONT })
-        .appendPath(id)
+        .apply { pathSegments(providerId, kind, storefront, id).forEach { appendPath(it) } }
         .build()
 
+    /**
+     * The path segments a URI for this entry consists of.
+     *
+     * Kept separate from [of] so the shape can be verified without `android.net.Uri`, which is not
+     * available in JVM unit tests.
+     */
+    internal fun pathSegments(
+        providerId: Long,
+        kind: String,
+        storefront: String,
+        id: String,
+    ): List<String> = listOf(
+        providerId.toString(),
+        kind,
+        storefront.ifBlank { AppleMusicClient.DEFAULT_STOREFRONT },
+        id,
+    )
+
     fun parse(uri: Uri): Parsed? {
-        if (uri.scheme != SCHEME || uri.authority != AUTHORITY) {
+        return parse(uri.scheme, uri.authority, uri.pathSegments)
+    }
+
+    /**
+     * Parsing core, separated from [parse] so it is testable on the JVM.
+     */
+    internal fun parse(
+        scheme: String?,
+        authority: String?,
+        segments: List<String>,
+    ): Parsed? {
+        if (scheme != SCHEME || authority != AUTHORITY) {
             return null
         }
 
-        val segments = uri.pathSegments
         if (segments.size != 4) {
             return null
         }
