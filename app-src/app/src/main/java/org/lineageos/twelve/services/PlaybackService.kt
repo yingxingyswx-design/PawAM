@@ -60,6 +60,14 @@ import org.lineageos.twelve.models.RepeatMode
 import org.lineageos.twelve.ui.widgets.NowPlayingAppWidgetProvider
 
 @OptIn(UnstableApi::class)
+/**
+ * How many upcoming queue entries are resolved ahead of playback.
+ *
+ * Resolving the whole queue made start-up block on one network round trip per track; resolving
+ * only the current one made the player skip forward whenever the next entry had no URL yet.
+ * A small lookahead keeps playback gapless in both directions.
+ */
+private const val RESOLVE_LOOKAHEAD = 3
 class PlaybackService : MediaLibraryService() {
     enum class CustomCommand {
         /**
@@ -333,6 +341,15 @@ class PlaybackService : MediaLibraryService() {
                 "onSetMediaItems received ${mediaItems.size} item(s), startIndex=$startIndex",
             )
 
+            // Show progress immediately: resolution can take a second or more, and without a
+            // buffering state the UI looks frozen while the queue is being prepared.
+            player?.let {
+                it.playWhenReady = true
+                if (startIndex in resolvedRange(mediaItems.size)) {
+                    it.seekTo(startIndex, startPositionMs)
+                }
+            }
+
             val startedAt = android.os.SystemClock.elapsedRealtime()
 
             // Resolution performs a network round trip per online track. If it fails, the whole
@@ -360,6 +377,42 @@ class PlaybackService : MediaLibraryService() {
                     "firstUri=${resolvedMediaItems.firstOrNull()?.localConfiguration?.uri}",
             )
 
+            // Entries other than the current one are resolved lazily, so a queue whose URLs are
+            // not known yet would make the player skip item after item. Neighbours are resolved in
+            // the background and replaced in place, so both skipping forward and going back find a
+            // ready entry instead of re-resolving (and stuttering) each time.
+            launch {
+                val index = startIndex.takeIf { it in mediaItems.indices } ?: 0
+
+                // Nearest neighbours first: skipping one track is far more common than skipping
+                // three, so offsets are walked outward.
+                for (offset in 1..RESOLVE_LOOKAHEAD) {
+                    for (target in intArrayOf(index + offset, index - offset)) {
+                        if (target !in mediaItems.indices) {
+                            continue
+                        }
+
+                        val item = resolvedMediaItems.getOrNull(target) ?: continue
+                        if (!mediaRepositoryTree.needsResolution(item)) {
+                            continue
+                        }
+
+                        val resolved = mediaRepositoryTree.resolveOne(item)
+                            .firstOrNull { it.localConfiguration?.uri != null }
+                            ?: continue
+
+                        val current = player ?: break
+                        if (target == current.currentMediaItemIndex) {
+                            // Replacing the item that is playing restarts it, so leave the
+                            // current entry alone; it is re-resolved on demand if needed.
+                            continue
+                        }
+
+                        current.replaceMediaItem(target, resolved)
+                    }
+                }
+            }
+
             launch {
                 resumptionPlaylistRepository.onMediaItemsChanged(
                     resolvedMediaItems.map { it.mediaId },
@@ -375,6 +428,7 @@ class PlaybackService : MediaLibraryService() {
             )
         }
 
+        private fun resolvedRange(size: Int) = 0 until size
         override fun onSearch(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -522,6 +576,38 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .experimentalSetDynamicSchedulingEnabled(true)
             .build()
+
+        // Skipping can land on an entry whose stream URL is still being resolved. Resolve it on
+        // demand instead of letting the player fail and skip again: without this, going back to a
+        // previously played track re-resolved it and stuttered.
+        player?.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (mediaItem == null) {
+                    return
+                }
+
+                val current = player ?: return
+                if (!mediaRepositoryTree.needsResolution(mediaItem)) {
+                    return
+                }
+
+                val position = current.currentMediaItemIndex
+                lifecycleScope.launch {
+                    val resolved = mediaRepositoryTree.resolveOne(mediaItem)
+                        .firstOrNull { it.localConfiguration?.uri != null }
+                        ?: return@launch
+
+                    // Replacing while the item is current would restart it, so the player keeps
+                    // its position and simply reloads the source.
+                    val wasPlaying = current.playWhenReady
+                    current.replaceMediaItem(position, resolved)
+                    if (wasPlaying) {
+                        current.prepare()
+                        current.play()
+                    }
+                }
+            }
+        })
 
         // A provider track can be unavailable (region-locked catalog item, removed release). One
         // such item must not kill the whole queue, so a playback error skips to the next entry

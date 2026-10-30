@@ -374,6 +374,38 @@ class AppleMusicClient(
     }
 
     /**
+     * Search the user's own library.
+     *
+     * Apple exposes this under `/me/library/search`, which only searches library content — the
+     * catalog search endpoint would return unrelated store results for the same query.
+     */
+    suspend fun librarySearch(
+        term: String,
+        limit: Int = 25,
+    ): AppleMusicResult<AppleMusicSearchResults> = userRequest { token, userToken ->
+        val url = url("me", "library", "search") {
+            addQueryParameter("term", term)
+            addQueryParameter("types", "library-albums,library-songs,library-artists")
+            addQueryParameter("limit", limit.toString())
+        } ?: return@userRequest AppleMusicResult.Failed()
+
+        val root = getJson(url, token, userToken)
+            ?: return@userRequest AppleMusicResult.Failed()
+        val results = root.optJSONObject("results") ?: JSONObject()
+
+        AppleMusicResult.Success(
+            AppleMusicSearchResults(
+                audios = results.resourceList("library-songs")
+                    .mapNotNull { it.toAudio(storefront()) },
+                albums = results.resourceList("library-albums")
+                    .mapNotNull { it.toLibraryAlbum(storefront()) },
+                artists = results.resourceList("library-artists")
+                    .mapNotNull { it.toArtist(storefront()) },
+            )
+        )
+    }
+
+    /**
      * Create a library playlist and return its catalog/library id.
      */
     suspend fun createPlaylist(name: String): AppleMusicResult<String> =

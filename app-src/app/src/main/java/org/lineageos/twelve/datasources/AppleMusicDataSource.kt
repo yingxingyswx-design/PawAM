@@ -366,7 +366,9 @@ class AppleMusicDataSource(
         query: String,
     ): Flow<MediaRequestStatus<List<MediaItem<*>>>> =
         request(providerIdentifier.typeId) { instance ->
-            when (val results = instance.client.search(query)) {
+            // Search the user's library first: this is the "search in my albums" entry, and the
+            // catalog search would otherwise return store results the user does not own.
+            when (val results = instance.client.librarySearch(query)) {
                 is AppleMusicResult.Success -> AppleMusicResult.Success(
                     buildList<MediaItem<*>> {
                         addAll(

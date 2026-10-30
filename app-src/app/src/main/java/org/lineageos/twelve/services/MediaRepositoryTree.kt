@@ -307,16 +307,16 @@ class MediaRepositoryTree(
             else -> runCatching { getItem(mediaItem.mediaId) }
                 .onFailure { Log.w(TAG, "Could not resolve ${mediaItem.mediaId}", it) }
                 .getOrNull()?.let { resolved ->
-                    // An item that still has no stream URI cannot be opened by the HTTP data
-                    // source; dropping it lets the player move on instead of failing on a URL
-                    // that does not exist.
+                    // Dropping an entry here would make the player skip it and immediately retry
+                    // the next one, which shows up as "frantically skipping tracks". Keeping the
+                    // unresolved entry instead makes the failure local to that one track.
                     if (resolved.localConfiguration?.uri == null) {
-                        Log.w(TAG, "Resolved ${mediaItem.mediaId} has no URI; dropping it")
-                        emptyList()
+                        Log.w(TAG, "Resolved ${mediaItem.mediaId} has no URI; keeping it as-is")
+                        listOf(mediaItem)
                     } else {
                         listOf(resolved)
                     }
-                } ?: emptyList()
+                } ?: listOf(mediaItem)
         }
     }
 
