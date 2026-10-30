@@ -104,6 +104,10 @@ object AppleMusicDrm {
                 throw IllegalStateException("Missing developer token")
             }
 
+            // Diagnostic for the offline-download work: the key URI is required to probe whether
+            // Apple issues persistent licences, and it is only known at play time.
+            Log.d(LOG_TAG, "KEYURI=" + license.keyUri)
+
             val body = WidevineLicenseRequest.body(
                 challenge = request.data,
                 keyUri = license.keyUri,
