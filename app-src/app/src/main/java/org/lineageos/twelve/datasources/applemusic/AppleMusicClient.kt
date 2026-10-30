@@ -5,6 +5,8 @@
 
 package org.lineageos.twelve.datasources.applemusic
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -325,6 +327,74 @@ class AppleMusicClient(
 
         return block(token, userToken)
     }
+
+    /**
+     * POST a JSON body and return the parsed response.
+     *
+     * Mutations answer with `201 Created` (and sometimes `204 No Content`), so those are treated as
+     * success alongside `200`.
+     */
+    private suspend fun postJson(
+        url: String,
+        developerToken: String,
+        userToken: String?,
+        body: JSONObject,
+    ): JSONObject? = withContext(Dispatchers.IO) {
+        val builder = Request.Builder()
+            .url(url)
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .header("Authorization", "Bearer $developerToken")
+            .header("Origin", AppleMusicHttp.ORIGIN)
+            .header("User-Agent", AppleMusicHttp.USER_AGENT)
+
+        if (userToken != null) {
+            builder.header("Music-User-Token", userToken)
+        }
+
+        runCatching {
+            AppleMusicHttp.client.newCall(builder.build()).execute().use { response ->
+                Log.d(LOG_TAG, "POST ${url.substringAfter("/v1")} -> ${response.code}")
+
+                when (response.code) {
+                    200, 201 -> JSONObject(response.body?.string().orEmpty())
+                    204 -> JSONObject()
+                    401, 403 -> JSONObject().put(STATUS_MARKER, STATUS_UNAUTHORIZED)
+                    404 -> JSONObject().put(STATUS_MARKER, STATUS_NOT_FOUND)
+                    else -> {
+                        Log.w(
+                            LOG_TAG,
+                            "Unexpected ${response.code}: " +
+                                response.body?.string()?.take(200),
+                        )
+                        null
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * Create a library playlist and return its catalog/library id.
+     */
+    suspend fun createPlaylist(name: String): AppleMusicResult<String> =
+        userRequest { token, userToken ->
+            val url = url("me", "library", "playlists")
+                ?: return@userRequest AppleMusicResult.Failed()
+
+            val payload = JSONObject().apply {
+                put(
+                    "attributes",
+                    JSONObject().put("name", name),
+                )
+            }
+
+            val root = postJson(url, token, userToken, payload)
+                ?: return@userRequest AppleMusicResult.Failed()
+
+            root.dataArray().firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }
+                ?.let { AppleMusicResult.Success(it) }
+                ?: AppleMusicResult.Failed()
+        }
 
     private suspend fun getJson(
         url: String,

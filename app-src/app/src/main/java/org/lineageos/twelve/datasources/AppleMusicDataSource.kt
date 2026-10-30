@@ -596,7 +596,25 @@ class AppleMusicDataSource(
     override suspend fun createPlaylist(
         providerIdentifier: ProviderIdentifier,
         name: String,
-    ): MediaRequestStatus<Uri> = Result.Failure(Error.NOT_IMPLEMENTED)
+    ): MediaRequestStatus<Uri> {
+        val instance = instanceFor(providerIdentifier.typeId)
+            ?: return Result.Failure(Error.NOT_FOUND)
+
+        return when (val created = instance.client.createPlaylist(name)) {
+            is AppleMusicResult.Success -> Result.Success(
+                AppleMusicUri.of(
+                    instance.providerId,
+                    AppleMusicUri.KIND_PLAYLIST,
+                    instance.storefront,
+                    created.data,
+                )
+            )
+
+            is AppleMusicResult.Unauthorized -> Result.Failure(Error.AUTHENTICATION_REQUIRED)
+            is AppleMusicResult.NotFound -> Result.Failure(Error.NOT_FOUND)
+            is AppleMusicResult.Failed -> Result.Failure(Error.INVALID_RESPONSE)
+        }
+    }
 
     override suspend fun renamePlaylist(playlistUri: Uri, name: String): MediaRequestStatus<Unit> =
         Result.Failure(Error.NOT_IMPLEMENTED)
