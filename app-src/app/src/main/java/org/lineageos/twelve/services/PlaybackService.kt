@@ -328,7 +328,18 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ) = lifecycleScope.future {
+            android.util.Log.d(
+                "PawAMPlayback",
+                "onSetMediaItems received ${mediaItems.size} item(s), startIndex=$startIndex",
+            )
+
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             val resolvedMediaItems = mediaRepositoryTree.resolveMediaItems(mediaItems)
+            android.util.Log.d(
+                "PawAMPlayback",
+                "resolveMediaItems took ${android.os.SystemClock.elapsedRealtime() - startedAt}ms " +
+                    "for ${mediaItems.size} item(s)",
+            )
 
             // Diagnostics: distinguishes "the queue arrived without stream URIs" from "the player
             // never started". PawAM-specific, low volume (once per queue set).
