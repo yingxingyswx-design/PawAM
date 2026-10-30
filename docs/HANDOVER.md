@@ -10,10 +10,12 @@
 | 网易云播放 / 暂停重播 | ✅ 真机验证 |
 | Apple Music 登录 / 开发者令牌 | ✅ 自动从网页播放器抓取 |
 | Apple Music 资料库 / 专辑详情 / 播放列表详情 | ✅ 真机验证 |
+| Apple Music 库内搜索（专辑/歌曲/艺术家） | ✅ 真机验证（`/me/library/search` 返回 200） |
+| Apple Music 创建播放列表 | 🟡 已实现，未真机验证 |
 | Apple Music 歌词（TTML 逐字） | ✅ 接口与解析；界面按需求已撤除 |
 | **Apple Music 全曲播放** | ✅ **真机验证（突破 30 秒试听，播完整首）** |
 | Apple Music 暂停 / 恢复 / 切歌 | ✅ 真机验证 |
-| Apple Music 播放列表「点歌起播」 | ⚠️ 已定位并加固，**缺最终真机确认** |
+| Apple Music 播放列表「点歌起播」 | ✅ 真机验证（懒解析 + 双向预解析） |
 
 ### 全曲播放是怎么打通的（重要，勿回退）
 
@@ -364,3 +366,20 @@ CDM 始终报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`。
 因此只剩 Apple 的 `widevine-cert-url`。它的响应是 protobuf，而 CDM 解析该响应时
 报 `ExtractAndDecodeSignedMessage: Cannot locate start substring`——
 需要确认 CDM 期望的确切响应封装（JSON envelope 里的字段名与 base64 编码方式）。
+
+### 播放列表起播与切歌（已解决，勿回退）
+
+- **懒解析**：`resolveMediaItems(items, startIndex)` 只解析即将播放的那一首，
+  其余保留原样。全量解析 100 首会让起播前阻塞数十秒。
+- **双向预解析**：起播后后台以当前曲目为中心，前后各 `RESOLVE_LOOKAHEAD = 3` 首
+  依次解析并 `replaceMediaItem`。只向前会导致往回切重新解析、卡顿。
+- **跳过当前项**：`replaceMediaItem` 目标等于 `currentMediaItemIndex` 时跳过，
+  否则正在播放的曲目会被重启。
+- **按需兜底**：`onMediaItemTransition` 里若目标项仍未解析，解析后再替换并恢复播放。
+- **加载反馈**：`onSetMediaItems` 一开始就置 `playWhenReady`，使 UI 立即进入 BUFFERING。
+- **不要丢弃解析失败的条目**：丢弃会让播放器连续跳歌（「疯狂切歌不播放」）。
+
+### 库内搜索
+
+- `AppleMusicClient.librarySearch` 走 `/me/library/search?types=library-albums,library-songs,library-artists`。
+- 切换前用的是目录搜索 `/catalog/<sf>/search`，会返回商店结果而非用户库内内容。
