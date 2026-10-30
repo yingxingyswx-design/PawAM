@@ -45,6 +45,14 @@ sealed interface AppleMusicResult<out T> {
  * Nothing here downloads audio: playback leases are a separate, DRM-gated concern handled by
  * [AppleMusicPlayback].
  */
+/**
+ * How long library metadata may be served from disk before it is fetched again.
+ *
+ * Library content changes when the user edits it, not on a timer, so a long window is acceptable
+ * and it is what makes opening the library instant on a weak connection.
+ */
+private const val CACHE_MAX_AGE_SECONDS = 12 * 60 * 60
+
 class AppleMusicClient(
     private val tokenProvider: AppleMusicTokenProvider,
     private val credentials: () -> AppleMusicCredentials,
@@ -467,6 +475,14 @@ class AppleMusicClient(
             .header("Authorization", "Bearer $developerToken")
             .header("Origin", AppleMusicHttp.ORIGIN)
             .header("User-Agent", AppleMusicHttp.USER_AGENT)
+            // Apple's API sends no cache validators, so OkHttp never stores these responses and
+            // every library visit re-fetches the whole listing. Asking for a long max-age is what
+            // makes the shared disk cache effective.
+            .cacheControl(
+                okhttp3.CacheControl.Builder()
+                    .maxAge(CACHE_MAX_AGE_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+            )
 
         if (userToken != null) {
             builder.header("Music-User-Token", userToken)
