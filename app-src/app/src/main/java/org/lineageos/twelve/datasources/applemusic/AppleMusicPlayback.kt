@@ -34,10 +34,17 @@ import org.json.JSONObject
  * [Lease] therefore reports whether the stream is encrypted so callers can decide between
  * "play it" and "this needs a DRM session", instead of handing ExoPlayer a stream it will fail on.
  */
+
 class AppleMusicPlayback(
     private val tokenProvider: AppleMusicTokenProvider,
     private val credentials: () -> AppleMusicCredentials,
 ) {
+    /**
+     * Recently resolved leases, keyed by song id, paired with the instant they stop being usable.
+     */
+    private val leaseCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Lease, Long>>()
+
+
     /**
      * A resolved playback asset.
      *
@@ -66,6 +73,15 @@ class AppleMusicPlayback(
      *   track unavailable) or the request failed.
      */
     suspend fun lease(songId: String): Lease? = withContext(Dispatchers.IO) {
+        // Leases dominate playback start-up latency: every track costs one request for the stream
+        // and one for the Widevine licence. Remembering a lease lets a repeat play reuse the URL
+        // and licence context instead of repeating both round trips. Apple's URLs are signed and
+        // short-lived, so entries expire quickly and are dropped once stale.
+        val cached = leaseCache[songId]
+        if (cached != null && System.currentTimeMillis() < cached.second) {
+            return@withContext cached.first
+        }
+
         val developerToken = tokenProvider.developerToken() ?: return@withContext null
         val userToken = credentials().musicUserToken.takeIf { it.isNotBlank() }
             ?: return@withContext null
@@ -203,7 +219,14 @@ class AppleMusicPlayback(
             licenseUrl = licenseUrl,
             keyUri = keyUri,
             certUrl = certUrl,
-        )
+        ).let { lease ->
+            leaseCache[songId] = lease to (System.currentTimeMillis() + LEASE_TTL_MS)
+            if (leaseCache.size > 64) {
+                val now = System.currentTimeMillis()
+                leaseCache.entries.removeAll { entry -> entry.value.second < now }
+            }
+            lease
+        }
     }
 
     /**
@@ -231,6 +254,9 @@ class AppleMusicPlayback(
 
     private companion object {
         private val LOG_TAG = "AppleMusicLease"
+
+        /** Apple's signed URLs expire well within this window. */
+        private const val LEASE_TTL_MS = 10 * 60 * 1000L
 
         /** Apple's playback lease endpoint used by the web player. */
         private const val WEB_PLAYBACK_URL =
