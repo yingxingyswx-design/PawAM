@@ -27,6 +27,17 @@ object AppleMusicHttp {
     /** Artwork URLs returned by the API contain `{w}`/`{h}` placeholders to be substituted. */
     const val ARTWORK_SIZE = 632
 
+    /**
+     * Disk cache for library metadata.
+     *
+     * Album, song and playlist listings are plain JSON and change rarely, so keeping them on disk
+     * makes the library open instantly and keeps it usable on a poor connection. Set by the
+     * application once the cache directory is available; when unset the client simply does not
+     * cache, which is the previous behaviour.
+     */
+    @Volatile
+    var cache: okhttp3.Cache? = null
+
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -34,6 +45,7 @@ object AppleMusicHttp {
             // far more than a normal API round trip on a mobile connection.
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .apply { cache?.let { cache(it) } }
             .build()
     }
 }

@@ -68,6 +68,15 @@ import org.lineageos.twelve.ui.widgets.NowPlayingAppWidgetProvider
  * A small lookahead keeps playback gapless in both directions.
  */
 private const val RESOLVE_LOOKAHEAD = 3
+
+/**
+ * Total budget for cached audio.
+ *
+ * Apple's streams cost a network round trip and a licence per track, so replaying from disk is the
+ * main way to make repeat listening feel instant. Too small a budget would evict tracks the user
+ * is still rotating through, hence a generous ceiling; LRU keeps it bounded.
+ */
+private const val MEDIA_CACHE_BYTES = 5L * 1024 * 1024 * 1024
 class PlaybackService : MediaLibraryService() {
     enum class CustomCommand {
         /**
@@ -402,13 +411,24 @@ class PlaybackService : MediaLibraryService() {
                             ?: continue
 
                         val current = player ?: break
-                        if (target == current.currentMediaItemIndex) {
+
+                        // The check and the replacement must observe the same index: skipping
+                        // right between them let `replaceMediaItem` hit the entry that had just
+                        // become current, which the player answers with STOPPED. Re-checking
+                        // immediately before replacing, and aborting if the queue moved at all,
+                        // removes that window.
+                        if (target == current.currentMediaItemIndex ||
+                            current.mediaItemCount != resolvedMediaItems.size
+                        ) {
                             // Replacing the item that is playing restarts it, so leave the
                             // current entry alone; it is re-resolved on demand if needed.
                             continue
                         }
 
-                        current.replaceMediaItem(target, resolved)
+                        runCatching { current.replaceMediaItem(target, resolved) }
+                            .onFailure {
+                                android.util.Log.w("PawAMPlayback", "replaceMediaItem failed", it)
+                            }
                     }
                 }
             }
@@ -540,9 +560,12 @@ class PlaybackService : MediaLibraryService() {
         // track, so replaying from disk makes repeated playback instant. A dedicated cache also
         // means a track that played once does not have to be resolved again.
         val cacheDir = java.io.File(cacheDir, "media")
+        // Bounded by total size rather than unbounded: NoOpCacheEvictor would let the cache grow
+        // without limit, while the user wants "as much as fits, up to 5 GB". Least-recently-used
+        // is the right policy for playback, where old tracks are the least likely to be replayed.
         val mediaCache = androidx.media3.datasource.cache.SimpleCache(
             cacheDir,
-            androidx.media3.datasource.cache.NoOpCacheEvictor(),
+            androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(MEDIA_CACHE_BYTES),
         )
 
         val playerDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
@@ -592,6 +615,25 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .experimentalSetDynamicSchedulingEnabled(true)
             .build()
+
+        // A skip can leave the player idle: the queue has entries but nothing is prepared, so the
+        // session reports STOPPED and the skip appears to do nothing. If a queue is loaded and
+        // entries remain, keep it moving instead of staying silent.
+        player?.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                val current = player ?: return
+                if (playbackState != Player.STATE_IDLE || current.mediaItemCount == 0) {
+                    return
+                }
+
+                android.util.Log.w(
+                    "PawAMPlayback",
+                    "Player went idle with ${current.mediaItemCount} item(s); resuming",
+                )
+                current.prepare()
+                current.play()
+            }
+        })
 
         // Skipping can land on an entry whose stream URL is still being resolved. Resolve it on
         // demand instead of letting the player fail and skip again: without this, going back to a
