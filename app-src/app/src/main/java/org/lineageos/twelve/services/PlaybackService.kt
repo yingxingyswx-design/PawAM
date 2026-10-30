@@ -663,6 +663,11 @@ class PlaybackService : MediaLibraryService() {
                         current.prepare()
                         current.play()
                     }
+
+                    // Warm the new neighbourhood. Only the window around the queue's start was
+                    // ever resolved, so skipping past it landed on entries with no stream URL and
+                    // playback jumped back to the first track.
+                    warmNeighbours(position)
                 }
             }
         })
@@ -800,6 +805,44 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaLibrarySession
+
+    /**
+     * Resolve the entries around [index] that still lack a stream URL.
+     *
+     * Called whenever playback moves. Before this, only the window around where the queue started
+     * was ever resolved, so a skip past it landed on an entry with no URL — the player then failed
+     * and fell back to the first track of the playlist.
+     */
+    private fun warmNeighbours(index: Int) {
+        lifecycleScope.launch {
+            val current = player ?: return@launch
+            val count = current.mediaItemCount
+
+            for (offset in 1..RESOLVE_LOOKAHEAD) {
+                for (target in intArrayOf(index + offset, index - offset)) {
+                    if (target !in 0 until count) {
+                        continue
+                    }
+
+                    val item = current.getMediaItemAt(target)
+                    if (!mediaRepositoryTree.needsResolution(item)) {
+                        continue
+                    }
+
+                    val resolved = mediaRepositoryTree.resolveOne(item)
+                        .firstOrNull { it.localConfiguration?.uri != null }
+                        ?: continue
+
+                    if (current.currentMediaItemIndex == target) {
+                        continue
+                    }
+
+                    runCatching { current.replaceMediaItem(target, resolved) }
+                        .onFailure { android.util.Log.w("PawAMPlayback", "replaceMediaItem failed", it) }
+                }
+            }
+        }
+    }
 
     private fun openAudioEffectSession() {
         Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
