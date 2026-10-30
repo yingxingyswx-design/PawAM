@@ -536,9 +536,25 @@ class PlaybackService : MediaLibraryService() {
                 .setAllowCrossProtocolRedirects(true),
         )
 
+        // Cache what is fetched: Apple's streams take a network round trip (and a licence) per
+        // track, so replaying from disk makes repeated playback instant. A dedicated cache also
+        // means a track that played once does not have to be resolved again.
+        val cacheDir = java.io.File(cacheDir, "media")
+        val mediaCache = androidx.media3.datasource.cache.SimpleCache(
+            cacheDir,
+            androidx.media3.datasource.cache.NoOpCacheEvictor(),
+        )
+
+        val playerDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(mediaCache)
+            .setUpstreamDataSourceFactory(
+                org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
+                    .dataSourceFactory(dataSourceFactory)
+            )
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-            org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
-                .dataSourceFactory(dataSourceFactory)
+            playerDataSourceFactory
         ).setDrmSessionManagerProvider(
             org.lineageos.twelve.datasources.applemusic.drm.AppleMusicDrm
                 .drmSessionManagerProvider()

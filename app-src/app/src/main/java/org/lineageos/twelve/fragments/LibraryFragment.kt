@@ -33,12 +33,13 @@ import org.lineageos.twelve.ext.navigateSafe
 import org.lineageos.twelve.ext.updatePadding
 import org.lineageos.twelve.models.Album
 import org.lineageos.twelve.models.Audio
-import org.lineageos.twelve.models.FlowResult
+
 import org.lineageos.twelve.models.MediaItem
 import androidx.recyclerview.widget.DiffUtil
 import org.lineageos.twelve.ui.recyclerview.SimpleListAdapter
 import org.lineageos.twelve.ui.recyclerview.UniqueItemDiffCallback
 import org.lineageos.twelve.ui.views.ListItem
+import org.lineageos.twelve.viewmodels.LibrarySearchViewModel
 import org.lineageos.twelve.viewmodels.MainViewModel
 
 /**
@@ -51,6 +52,7 @@ import org.lineageos.twelve.viewmodels.MainViewModel
 class LibraryFragment : Fragment(R.layout.fragment_library) {
     // View models
     private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
+    private val searchViewModel by viewModels<LibrarySearchViewModel>()
 
     // Views
     private val tabLayout by getViewProperty<TabLayout>(R.id.tabLayout)
@@ -151,19 +153,22 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         recyclerView.adapter = adapter
 
         searchInput.doOnTextChanged { text, _, _, _ ->
-            viewModel.setSearchQuery(text?.toString().orEmpty(), immediate = true)
+            searchViewModel.setQuery(text?.toString().orEmpty())
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.searchResults.collectLatest { result ->
+                searchViewModel.results.collectLatest { result ->
                     val searching = searchInput.text?.isNotEmpty() == true
 
                     tabLayout.isVisible = !searching
                     viewPager2.isVisible = !searching
                     recyclerView.isVisible = searching
 
-                    val items = (result as? FlowResult.Success)?.data ?: emptyList()
+                    val items: List<MediaItem<*>> = when (result) {
+                        is org.lineageos.twelve.models.Result.Success -> result.data
+                        else -> emptyList()
+                    }
                     adapter.submitList(if (searching) items else emptyList())
                 }
             }
