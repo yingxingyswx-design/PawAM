@@ -629,7 +629,12 @@ class PlaybackService : MediaLibraryService() {
         // URI, which the data source cannot open: the player raises a source error before any
         // lazy resolution could run. Playback is therefore held until the entry is resolved, so a
         // skip waits for the URL instead of failing and bouncing around the queue.
-        player?.addListener(object : Player.Listener {
+        // Disabled: the queue is resolved eagerly at installation time (see onSetMediaItems), so a
+        // transition should never land on an un-resolved entry. This listener was replacing the
+        // current item right after installation, which reset the queue and left the session at
+        // `NONE` with `active item id=0` — no audio at all.
+        @Suppress("UNUSED_VARIABLE")
+        val transitionListener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (mediaItem == null) {
                     return
@@ -676,10 +681,10 @@ class PlaybackService : MediaLibraryService() {
                     current.playWhenReady = wasPlaying
 
                     // Warm the new neighbourhood so further skips find a ready URL too.
-                    warmNeighbours(position)
+                    // warmNeighbours(position)  // disabled: replaceMediaItem resets the queue
                 }
             }
-        })
+        }
 
         // A track can fail because its stream URL is not known yet: the queue is resolved lazily,
         // so skipping onto an un-resolved entry used to raise an error, and blindly seeking to the
@@ -855,7 +860,9 @@ class PlaybackService : MediaLibraryService() {
      * neither current nor adjacent to the current one: patching a neighbour close to playback was
      * observed to keep restarting the track that was about to play.
      */
+    @Suppress("unused")
     private fun warmNeighbours(index: Int) {
+        if (true) return  // Disabled: replaceMediaItem resets the queue while it is playing.
         lifecycleScope.launch {
             val current = player ?: return@launch
             val count = current.mediaItemCount
