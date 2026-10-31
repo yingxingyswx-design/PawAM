@@ -63,3 +63,4 @@ l*.xml
 # UI dump / debug artifacts captured while driving the device
 *.xml
 !app-src/**/*.xml
+release/
